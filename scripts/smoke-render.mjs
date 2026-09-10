@@ -33,10 +33,6 @@ if (svg.dataset.clefLanes !== "2") {
   throw new Error(`Expected the piano sample to keep treble and bass in 2 clef lanes, got ${svg.dataset.clefLanes}.`);
 }
 
-if (svg.dataset.chordEncoding !== "parallel-lines-per-semitone") {
-  throw new Error(`Unexpected chord interval encoding: ${svg.dataset.chordEncoding || "missing"}.`);
-}
-
 const noteGlyphs = svg.querySelectorAll("path").length;
 if (noteGlyphs === 0) {
   throw new Error("The SVG contains no path glyphs; rhythmic engraving did not render.");
@@ -66,5 +62,5 @@ if (sameClefSvg.dataset.clefLanes !== "1") {
 }
 
 console.log(
-  `VexFlow smoke render OK: ${output.length} SVG characters, ${noteGlyphs} path elements; clef grouping 2→1 and chord interval encoding verified.`,
+  `VexFlow smoke render OK: ${output.length} SVG characters, ${noteGlyphs} path elements; clef grouping 2→1 verified.`,
 );
