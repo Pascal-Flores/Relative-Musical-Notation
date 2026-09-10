@@ -34,7 +34,7 @@ The connector itself encodes direction through its slope. Direction is never rep
 
 ### Interval notation
 
-Small intervals are encoded by the number of complete connector lines between the two notes:
+Small melodic intervals are encoded by the number of complete connector lines between the two notes:
 
 - 1 semitone: one connecting line;
 - 2 semitones: two parallel connecting lines;
@@ -50,7 +50,18 @@ If a voice begins with rests before its first pitched event, those rests tempora
 
 ### Chords
 
-Simultaneous notes are stacked at the same horizontal time position. Adjacent pitches in the chord are connected by vertical spine segments that stop short of the noteheads.
+Simultaneous notes are stacked at the same horizontal time position.
+
+Because there is little vertical room for numeric labels inside a chord, chord intervals use line multiplicity for every interval size. Between each pair of adjacent chord tones, the number of thin parallel vertical lines equals the chromatic distance in semitones:
+
+- 1 semitone: 1 vertical line;
+- 2 semitones: 2 parallel vertical lines;
+- 3 semitones: 3 parallel vertical lines;
+- 4 semitones: 4 parallel vertical lines;
+- 5 semitones: 5 parallel vertical lines;
+- and so on.
+
+For example, a C–E–G major triad has 4 vertical lines between C and E, then 3 vertical lines between E and G. These lines stop short of the noteheads and are packed tightly around the chord's horizontal center.
 
 For the current POC, melodic connections entering or leaving a chord follow its highest pitch as the representative melodic note.
 
@@ -91,18 +102,19 @@ Because the notation is relative inside each line, interval magnitudes, melodic 
 
 The current renderer uses hidden virtual VexFlow staves. The stave spacing is chosen so that half of one virtual VexFlow line-step equals exactly one chromatic semitone step in the visible notation.
 
-The hidden staves and ledger lines are not drawn. VexFlow remains responsible for note glyphs, stems, beams, dots, rests, rhythmic spacing and multi-voice horizontal formatting; the POC supplies relative chromatic vertical positions, local absolute anchors, chord spines and melodic connectors.
+The hidden staves and ledger lines are not drawn. VexFlow remains responsible for note glyphs, stems, beams, dots, rests, rhythmic spacing and multi-voice horizontal formatting; the POC supplies relative chromatic vertical positions, local absolute anchors, chord interval lines and melodic connectors.
 
-Connectors use VexFlow's own notehead coordinates (`getYs()`, `getNoteHeadBeginX()`, `getNoteHeadEndX()`) rather than recomputing approximate positions independently. A fixed geometric gap is removed from both ends of each connector so it never touches the glyphs.
+Connectors use VexFlow's own notehead coordinates (`getYs()`, `getNoteHeadBeginX()`, `getNoteHeadEndX()`) rather than recomputing approximate positions independently. A fixed geometric gap is removed from both ends of each melodic connector so it never touches the glyphs.
 
 ## 9. Open design questions
 
 1. How often should an absolute anchor be repeated?
-2. Is the one-line / two-line distinction for semitone and whole-tone motion clear enough at different print sizes?
-3. Which note of a polyphonic chord should carry the melodic continuation when MusicXML does not make that voice-leading explicit?
-4. How should more than two simultaneous voices sharing one clef be distinguished without relying on colour?
-5. Should clef changes inside a system force an automatic lane split or a new system?
-6. Should very large leaps be compressed visually or always remain metrically exact?
-7. How should enharmonic spelling (`D#` versus `Eb`) be represented when pitch itself is chromatic?
-8. How should ties, slurs, glissandi and phrase connections differ visually from the relative-pitch connector?
-9. Should line breaks follow measures, phrases, or an engraving algorithm that considers both?
+2. Is the one-line / two-line distinction for semitone and whole-tone melodic motion clear enough at different print sizes?
+3. How tightly can multiple vertical chord-interval lines be packed before they become hard to count?
+4. Which note of a polyphonic chord should carry the melodic continuation when MusicXML does not make that voice-leading explicit?
+5. How should more than two simultaneous voices sharing one clef be distinguished without relying on colour?
+6. Should clef changes inside a system force an automatic lane split or a new system?
+7. Should very large leaps be compressed visually or always remain metrically exact?
+8. How should enharmonic spelling (`D#` versus `Eb`) be represented when pitch itself is chromatic?
+9. How should ties, slurs, glissandi and phrase connections differ visually from the relative-pitch connector?
+10. Should line breaks follow measures, phrases, or an engraving algorithm that considers both?
