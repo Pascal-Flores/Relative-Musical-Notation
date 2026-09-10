@@ -23,7 +23,7 @@ jobs:
         run: python3 -c "import xml.etree.ElementTree as ET; ET.parse('samples/example.musicxml'); print('MusicXML sample is well-formed')"
 
       - name: Install smoke-test dependencies
-        run: npm install --no-save --no-package-lock vexflow@5.0.0 jsdom@26.1.0
+        run: npm install --no-save --no-package-lock vexflow@5.0.0 jsdom@26.1.0 jszip@3.10.1
 
-      - name: Render bundled sample with VexFlow
+      - name: Render MusicXML and test MXL extraction
         run: node scripts/smoke-render.mjs
