@@ -6,6 +6,10 @@ const CHORD_GAP = 5;
 const PARALLEL_CONNECTOR_OFFSET = 2.4;
 const CHORD_PARALLEL_REFERENCE_LINES = 5;
 const CHORD_PARALLEL_WIDTH_RATIO = 0.92;
+const PHRASE_BREAK_MIN_QUARTERS = 1;
+const LANE_GAP = 4;
+const SYSTEM_GAP = 18;
+const SYSTEM_SEPARATOR_OFFSET = 8;
 const DEFAULT_CLEF = { sign: "G", line: 2, octaveChange: 0, key: "G:2:0", label: "treble" };
 
 function requireVexFlow() {
@@ -277,6 +281,48 @@ function firstPitchedEvent(track, systemStart, systemEnd) {
   ) ?? null;
 }
 
+function previousPitchedEvent(track, systemStart) {
+  for (let index = track.events.length - 1; index >= 0; index -= 1) {
+    const event = track.events[index];
+    if (event.measureIndex >= systemStart) continue;
+    if (event.kind === "note" && event.pitch) return event;
+  }
+  return null;
+}
+
+function nextPitchedEvent(track, systemEnd) {
+  return track.events.find((event) =>
+    event.measureIndex >= systemEnd
+    && event.kind === "note"
+    && event.pitch,
+  ) ?? null;
+}
+
+function lastPitchedEvent(track, systemStart, systemEnd) {
+  for (let index = track.events.length - 1; index >= 0; index -= 1) {
+    const event = track.events[index];
+    if (event.measureIndex >= systemEnd) continue;
+    if (event.measureIndex < systemStart) break;
+    if (event.kind === "note" && event.pitch) return event;
+  }
+  return null;
+}
+
+function silenceBetween(previous, next) {
+  if (!previous || !next) return Infinity;
+  return Math.max(0, next.onset - (previous.onset + Math.max(0, previous.duration || 0)));
+}
+
+function startsNewPhrase(previous, next) {
+  if (!next) return false;
+  if (!previous) return true;
+  return silenceBetween(previous, next) >= PHRASE_BREAK_MIN_QUARTERS - 1e-7;
+}
+
+function pitchYForMidi(midi, anchorMidi, anchorY, semitoneSpacing) {
+  return anchorY - (midi - anchorMidi) * semitoneSpacing;
+}
+
 function trackClefInSystem(track, systemStart, systemEnd) {
   const event = track.events.find((candidate) =>
     candidate.measureIndex >= systemStart && candidate.measureIndex < systemEnd,
@@ -382,8 +428,8 @@ function systemGeometry(lane, systemStart, systemEnd, top, semitoneSpacing, tran
   const minDelta = deltas.length ? Math.min(...deltas) : 0;
   const maxDelta = deltas.length ? Math.max(...deltas) : 0;
   const span = maxDelta - minDelta;
-  const pitchTop = top + 54;
-  const rowHeight = Math.max(124, 102 + span * semitoneSpacing);
+  const pitchTop = top + 42;
+  const rowHeight = Math.max(88, 84 + span * semitoneSpacing);
   const anchorY = pitchTop + maxDelta * semitoneSpacing;
 
   return { anchor, anchorMidi, minDelta, maxDelta, span, pitchTop, anchorY, rowHeight };
@@ -468,27 +514,18 @@ function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, 
 
   for (const track of lane.tracks) {
     const trackAnchor = firstPitchedEvent(track, systemStart, systemEnd);
+    const previous = previousPitchedEvent(track, systemStart);
     pitchStates.set(track.key, {
-      lastMidi: null,
+      lastMidi: previous ? previous.pitch.midi + options.transpose : null,
       fallbackMidi: trackAnchor ? trackAnchor.pitch.midi + options.transpose : anchorMidi,
     });
   }
-
-  const voiceLabel = lane.tracks.map((track) => track.voice).join(", ");
-  drawText(context, `${lane.clef.label || lane.clef.sign} · voice${lane.tracks.length > 1 ? "s" : ""} ${voiceLabel}`, 18, top + 17, {
-    size: 10,
-    weight: "bold",
-    fill: "#68717b",
-  });
 
   for (let measureIndex = systemStart; measureIndex < systemEnd; measureIndex += 1) {
     const localIndex = measureIndex - systemStart;
     const x = options.leftMargin + localIndex * options.measureWidth;
     const measure = part.measures[measureIndex];
     if (!measure) continue;
-
-    drawLine(context, x, top + 28, x, rowBottom - 18, { stroke: "#d6dade", width: 1 });
-    drawText(context, measure.number, x + 7, top + 18, { size: 9, fill: "#969da5" });
 
     const spacing = options.semitoneSpacing * 2;
     const virtualStaveY = anchorY - (5 - ANCHOR_LINE) * spacing;
@@ -534,7 +571,6 @@ function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, 
   }
 
   const endX = options.leftMargin + (systemEnd - systemStart) * options.measureWidth;
-  drawLine(context, endX, top + 28, endX, rowBottom - 18, { stroke: "#d6dade", width: 1 });
 
   const plottedByTrack = new Map(lane.tracks.map((track) => [track.key, []]));
   for (const bundle of measureBundles) {
@@ -544,8 +580,31 @@ function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, 
     }
   }
 
-  for (const plotted of plottedByTrack.values()) {
+  for (const [trackKey, plotted] of plottedByTrack.entries()) {
+    const track = lane.tracks.find((candidate) => candidate.key === trackKey);
     for (const item of plotted) drawChordSpine(context, item);
+
+    const firstItem = plotted[0] ?? null;
+    const firstPitch = track ? firstPitchedEvent(track, systemStart, systemEnd) : null;
+    const previousPitch = track ? previousPitchedEvent(track, systemStart) : null;
+    const phraseStartsHere = startsNewPhrase(previousPitch, firstPitch);
+
+    if (firstItem && previousPitch && !phraseStartsHere) {
+      const previousMidi = previousPitch.pitch.midi + options.transpose;
+      const previousY = pitchYForMidi(previousMidi, anchorMidi, anchorY, options.semitoneSpacing);
+      const incoming = shortenSegment(
+        options.leftMargin + 2,
+        previousY,
+        firstItem.beginX,
+        firstItem.y,
+        0,
+        CONNECTOR_GAP,
+      );
+      if (incoming) {
+        const interval = firstItem.isRest ? 0 : firstItem.pitchMidi - previousMidi;
+        drawIntervalConnector(context, incoming, interval, !firstItem.isRest);
+      }
+    }
 
     for (let index = 1; index < plotted.length; index += 1) {
       const previous = plotted[index - 1];
@@ -560,6 +619,14 @@ function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, 
         drawIntervalConnector(context, segment, interval, true);
       }
     }
+
+    const lastItem = plotted.at(-1) ?? null;
+    const lastPitch = track ? lastPitchedEvent(track, systemStart, systemEnd) : null;
+    const followingPitch = track ? nextPitchedEvent(track, systemEnd) : null;
+    if (lastItem && lastPitch && followingPitch && !startsNewPhrase(lastPitch, followingPitch)) {
+      const outgoing = shortenSegment(lastItem.endX, lastItem.y, endX - 5, lastItem.y, CONNECTOR_GAP, 0);
+      if (outgoing) drawIntervalConnector(context, outgoing, 0, false);
+    }
   }
 
   for (const bundle of measureBundles) {
@@ -573,6 +640,10 @@ function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, 
   for (const track of lane.tracks) {
     const anchor = firstPitchedEvent(track, systemStart, systemEnd);
     if (!anchor) continue;
+
+    const previous = previousPitchedEvent(track, systemStart);
+    if (!startsNewPhrase(previous, anchor)) continue;
+
     const plotted = plottedByTrack.get(track.key) || [];
     const anchorItem = plotted.find((item) => !item.isRest && item.cluster.notes.includes(anchor));
     if (!anchorItem) continue;
@@ -585,7 +656,10 @@ function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, 
     if (drawnAnchors.has(dedupeKey)) continue;
     drawnAnchors.add(dedupeKey);
 
-    drawText(context, anchorLabel, anchorItem.centerX, anchorNoteY + 17, {
+    const stemDirection = anchorItem.note.getStemDirection?.();
+    const labelY = stemDirection === vf.Stem.DOWN ? anchorNoteY - 9 : anchorNoteY + 17;
+
+    drawText(context, anchorLabel, anchorItem.centerX, labelY, {
       size: 9,
       weight: "bold",
       align: "center",
@@ -597,36 +671,75 @@ function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, 
 }
 
 function calculateLayout(score, options) {
-  let top = 58;
+  let top = 54;
   const rows = [];
+  const groups = [];
 
   for (const part of score.parts) {
-    top += 32;
+    top += 26;
+    let firstGroupForPart = true;
+
     for (let systemStart = 0; systemStart < part.measures.length; systemStart += options.measuresPerSystem) {
       const systemEnd = Math.min(part.measures.length, systemStart + options.measuresPerSystem);
       const lanes = buildClefLanes(part, systemStart, systemEnd);
+      const groupTop = top;
       let systemHeight = 0;
 
-      for (const lane of lanes) {
+      lanes.forEach((lane, laneIndex) => {
+        const laneTop = groupTop + systemHeight;
         const geometry = systemGeometry(
           lane,
           systemStart,
           systemEnd,
-          top + systemHeight,
+          laneTop,
           options.semitoneSpacing,
           options.transpose,
         );
-        rows.push({ part, lane, systemStart, systemEnd, top: top + systemHeight, rowHeight: geometry.rowHeight });
-        systemHeight += geometry.rowHeight + 12;
-      }
+        rows.push({
+          part,
+          lane,
+          systemStart,
+          systemEnd,
+          top: laneTop,
+          rowHeight: geometry.rowHeight,
+          laneIndex,
+          laneCount: lanes.length,
+          firstGroupForPart,
+        });
+        systemHeight += geometry.rowHeight;
+        if (laneIndex < lanes.length - 1) systemHeight += LANE_GAP;
+      });
 
-      top += systemHeight + 24;
+      const groupBottom = groupTop + systemHeight;
+      groups.push({ part, systemStart, systemEnd, top: groupTop, bottom: groupBottom, firstGroupForPart });
+      top = groupBottom + SYSTEM_GAP;
+      firstGroupForPart = false;
     }
-    top += 12;
+
+    top += 6;
   }
 
-  return { rows, height: Math.max(220, top + 20) };
+  return { rows, groups, height: Math.max(220, top + 12) };
 }
+
+function drawSystemGroupFrame(context, group, options) {
+  const top = group.top + 10;
+  const bottom = group.bottom - 8;
+
+  for (let measureIndex = group.systemStart; measureIndex < group.systemEnd; measureIndex += 1) {
+    const localIndex = measureIndex - group.systemStart;
+    const x = options.leftMargin + localIndex * options.measureWidth;
+    const measure = group.part.measures[measureIndex];
+    if (!measure) continue;
+
+    drawLine(context, x, top, x, bottom, { stroke: "#d6dade", width: 1 });
+    drawText(context, measure.number, x + 7, top - 5, { size: 9, fill: "#969da5" });
+  }
+
+  const endX = options.leftMargin + (group.systemEnd - group.systemStart) * options.measureWidth;
+  drawLine(context, endX, top, endX, bottom, { stroke: "#d6dade", width: 1 });
+}
+
 
 export function renderRelativeScore(score, userOptions = {}) {
   const vf = requireVexFlow();
@@ -650,13 +763,23 @@ export function renderRelativeScore(score, userOptions = {}) {
     drawText(context, score.metadata.composer, 18, 45, { size: 10, fill: "#737b84" });
   }
 
-  let previousPart = null;
-  for (const row of layout.rows) {
-    if (row.part !== previousPart) {
-      drawText(context, row.part.name, 18, row.top - 12, { size: 12, weight: "bold", fill: "#3f464e" });
-      previousPart = row.part;
+  for (const group of layout.groups) {
+    if (group.firstGroupForPart) {
+      drawText(context, group.part.name, 18, group.top - 12, { size: 12, weight: "bold", fill: "#3f464e" });
     }
+    drawSystemGroupFrame(context, group, options);
+  }
+
+  for (const row of layout.rows) {
     renderClefLaneSystem(context, row.part, row.lane, row.systemStart, row.systemEnd, row.top, options);
+  }
+
+  for (let index = 0; index < layout.groups.length - 1; index += 1) {
+    const group = layout.groups[index];
+    const next = layout.groups[index + 1];
+    if (group.part !== next.part) continue;
+    const separatorY = group.bottom + SYSTEM_SEPARATOR_OFFSET;
+    drawLine(context, 18, separatorY, width - 18, separatorY, { stroke: "#bfc5cb", width: 1 });
   }
 
   const svg = host.querySelector("svg");
@@ -666,5 +789,7 @@ export function renderRelativeScore(score, userOptions = {}) {
   svg.setAttribute("aria-label", `${score.metadata.title || "Score"} in relative chromatic notation`);
   svg.dataset.renderer = "VexFlow 5";
   svg.dataset.clefLanes = String(layout.rows.length);
+  svg.dataset.systemGroups = String(layout.groups.length);
+  svg.dataset.anchorPolicy = "phrase-aware-continuation";
   return svg;
 }
