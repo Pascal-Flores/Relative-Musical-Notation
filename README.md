@@ -11,7 +11,7 @@ The renderer takes a MusicXML file and produces an SVG score with these rules:
 - a 1-semitone interval uses one connecting line;
 - a 2-semitone interval uses two parallel connecting lines;
 - intervals of 3 semitones and above use one connecting line plus an unsigned numeric magnitude (`3`, `4`, `5`, `6`, ...);
-- simultaneous chord pitches are joined by separated vertical spine segments;
+- inside chords, adjacent chord tones are joined by as many thin parallel vertical lines as there are semitones between them (for example C–E = 4 lines, E–G = 3 lines);
 - rests stay at the vertical level of the last sounded note, and the next interval is still measured from that last pitch;
 - MusicXML clef assignments are preserved as **display lanes**: voices on the same clef are rendered together, while treble/bass remain separate;
 - noteheads, stems, dots, flags, beams and rests keep their conventional rhythmic role;
