@@ -8,10 +8,10 @@ The renderer takes a MusicXML file and produces an SVG score with these rules:
 - one vertical step represents one semitone;
 - each rendered melodic line starts from an absolute pitch anchor (`C4`, `F#4`, ...) shown locally below its note;
 - successive musical events in a voice are connected by segments with a small visual gap around the note/rest glyphs;
-- the slope of a segment gives interval direction;
-- a 1-semitone interval is marked by one small perpendicular tick;
-- a 2-semitone interval is marked by two small perpendicular ticks;
-- intervals of 3 semitones and above use an unsigned numeric magnitude (`3`, `4`, `5`, `6`, ...);
+- the slope of a connector gives interval direction;
+- a 1-semitone interval uses one connecting line;
+- a 2-semitone interval uses two parallel connecting lines;
+- intervals of 3 semitones and above use one connecting line plus an unsigned numeric magnitude (`3`, `4`, `5`, `6`, ...);
 - simultaneous chord pitches are joined by separated vertical spine segments that do not touch the noteheads;
 - rests stay at the vertical level of the last sounded note, and the next interval is still measured from that last pitch;
 - noteheads, stems, dots, flags, beams and rests keep their conventional rhythmic role;
