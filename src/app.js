@@ -7,8 +7,6 @@ const downloadSvgButton = document.querySelector("#downloadSvg");
 const measuresPerSystemInput = document.querySelector("#measuresPerSystem");
 const semitoneSpacingInput = document.querySelector("#semitoneSpacing");
 const semitoneSpacingValue = document.querySelector("#semitoneSpacingValue");
-const minIntervalLabelInput = document.querySelector("#minIntervalLabel");
-const minIntervalLabelValue = document.querySelector("#minIntervalLabelValue");
 const transposeInput = document.querySelector("#transpose");
 const status = document.querySelector("#status");
 const scoreMeta = document.querySelector("#scoreMeta");
@@ -27,14 +25,12 @@ function settings() {
   return {
     measuresPerSystem: Number(measuresPerSystemInput.value),
     semitoneSpacing: Number(semitoneSpacingInput.value),
-    minIntervalLabel: Number(minIntervalLabelInput.value),
     transpose: Number(transposeInput.value),
   };
 }
 
 function updateControlLabels() {
   semitoneSpacingValue.value = `${semitoneSpacingInput.value} px`;
-  minIntervalLabelValue.value = `${minIntervalLabelInput.value} semitone${minIntervalLabelInput.value === "1" ? "" : "s"}`;
 }
 
 function updateMetadata() {
@@ -69,7 +65,7 @@ function render() {
     currentSvg = renderRelativeScore(score, settings());
     renderHost.replaceChildren(currentSvg);
     downloadSvgButton.disabled = false;
-    setStatus(`Rendered ${sourceName}. Direction is carried by the segment slope; labels show unsigned interval size only.`);
+    setStatus(`Rendered ${sourceName}. 1–2 semitone intervals use tick marks; larger intervals use unsigned numbers.`);
   } catch (error) {
     console.error(error);
     setStatus(error instanceof Error ? error.message : String(error), true);
@@ -110,7 +106,7 @@ loadSampleButton.addEventListener("click", async () => {
   }
 });
 
-for (const control of [measuresPerSystemInput, semitoneSpacingInput, minIntervalLabelInput, transposeInput]) {
+for (const control of [measuresPerSystemInput, semitoneSpacingInput, transposeInput]) {
   control.addEventListener("input", render);
   control.addEventListener("change", render);
 }
