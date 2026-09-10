@@ -32,24 +32,28 @@ Later versions can add re-anchors at:
 
 ## 3. Melodic connections
 
-Successive musical events in one voice are linked with straight segments attached to the actual notehead/rest positions produced by VexFlow.
+Successive musical events in one voice are linked with straight segments based on the actual notehead/rest positions produced by VexFlow.
+
+The connector deliberately stops before each glyph. It therefore indicates the relationship between two events without visually touching or merging with the notehead or rest symbol.
 
 The segment itself encodes two things:
 
 - its slope gives direction: rising or falling;
 - its vertical displacement gives chromatic interval size in semitones.
 
-A numeric interval label, when present, therefore does **not** carry a `+` or `-` sign. For example, both an ascending and descending perfect fourth may be labelled `5`; their direction is already visible.
+Direction is never repeated as a `+` or `-` sign.
 
-The current default is to omit labels for intervals smaller than 3 semitones:
+### Interval marks
 
-- 1 semitone: geometry only;
-- 2 semitones: geometry only;
-- 3 semitones and above: unsigned numeric label (`3`, `4`, `5`, `7`, `12`, ...).
+Small intervals use tally-like marks rather than numbers:
 
-This remains adjustable in the UI so reading tests can determine the useful threshold.
+- 1 semitone: one short perpendicular mark across the connector;
+- 2 semitones: two short perpendicular marks across the connector;
+- 3 semitones and above: unsigned numeric magnitude (`3`, `4`, `5`, `6`, `7`, `12`, ...).
 
-A repeated pitch has a horizontal connector and does not need an interval label by default.
+The short marks are intentionally orientation-independent: the connector slope already says whether the motion rises or falls.
+
+A repeated pitch has a horizontal connector and no interval annotation.
 
 ### Rests
 
@@ -61,7 +65,9 @@ If a system begins with rests before its first pitched event, those rests use th
 
 ### Chords
 
-Simultaneous notes are stacked at the same horizontal time position and connected by a vertical spine. This makes the chord read as one vertical pitch structure rather than as unrelated noteheads.
+Simultaneous notes are stacked at the same horizontal time position.
+
+Adjacent pitches in the chord are connected by vertical spine segments. Each spine segment stops short of both noteheads, so the chord remains visually connected without the line touching or running through the noteheads.
 
 For the current POC, melodic connections entering or leaving a chord follow its highest pitch as the representative melodic note. This is still a provisional voice-leading rule; later versions may use an explicit voice note instead.
 
@@ -104,6 +110,7 @@ Because the notation is relative inside each line:
 
 - interval magnitudes do not change;
 - melodic slopes do not change;
+- interval tick marks do not change;
 - vertical shape does not change;
 - rhythmic notation does not change;
 - only the absolute anchor labels change.
@@ -116,18 +123,17 @@ The current renderer uses a hidden virtual VexFlow stave. The stave spacing is c
 
 The hidden stave and its ledger lines are not drawn. VexFlow remains responsible for note glyphs, stems, beams, dots, rests and rhythmic horizontal formatting; the POC supplies the relative chromatic vertical positions, local absolute anchors, chord spines and melodic connectors.
 
-Connectors use VexFlow's own notehead coordinates (`getYs()`, `getNoteHeadBeginX()`, `getNoteHeadEndX()`) rather than recomputing approximate positions independently. This keeps the contour attached to the actual engraved glyphs.
+Connectors use VexFlow's own notehead coordinates (`getYs()`, `getNoteHeadBeginX()`, `getNoteHeadEndX()`) rather than recomputing approximate positions independently. A fixed geometric gap is then removed from both ends of each connector so it never touches the glyphs.
 
 ## 9. Open design questions
 
 The next useful experiments are:
 
 1. How often should an absolute anchor be repeated?
-2. What is the smallest interval that benefits from an explicit numeric label: 1, 2, 3, or larger?
-3. Should interval numbers be a normal part of the notation or mostly a learning aid?
-4. Which note of a polyphonic chord should carry the melodic continuation when MusicXML does not make that voice-leading explicit?
-5. How should independent simultaneous voices be distinguished without relying on colour?
-6. Should very large leaps be compressed visually or always remain metrically exact?
-7. How should enharmonic spelling (`D#` versus `Eb`) be represented when pitch itself is chromatic?
-8. How should ties, slurs, glissandi and phrase connections differ visually from the relative-pitch connector?
-9. Should line breaks follow measures, phrases, or an engraving algorithm that considers both?
+2. Is one/two tally marks the clearest convention for semitone and whole-tone motion at different print sizes?
+3. Which note of a polyphonic chord should carry the melodic continuation when MusicXML does not make that voice-leading explicit?
+4. How should independent simultaneous voices be distinguished without relying on colour?
+5. Should very large leaps be compressed visually or always remain metrically exact?
+6. How should enharmonic spelling (`D#` versus `Eb`) be represented when pitch itself is chromatic?
+7. How should ties, slurs, glissandi and phrase connections differ visually from the relative-pitch connector?
+8. Should line breaks follow measures, phrases, or an engraving algorithm that considers both?
