@@ -14,7 +14,7 @@ globalThis.JSZip = JSZip;
 
 const { extractMusicXMLFromMXL } = await import("../src/mxl.js");
 const { parseMusicXML } = await import("../src/musicxml.js");
-const { renderRelativeScore } = await import("../src/render.js");
+const { renderRelativeScore } = await import("../src/render-score.js");
 
 const source = await readFile(new URL("../samples/example.musicxml", import.meta.url), "utf8");
 const score = parseMusicXML(source);
@@ -40,6 +40,10 @@ if (svg.dataset.systemGroups !== "1") {
   throw new Error(`Expected the four-measure sample to form 1 simultaneous system group, got ${svg.dataset.systemGroups || "missing"}.`);
 }
 
+if (svg.dataset.partGrouping !== "native" || svg.dataset.sourceParts !== "1") {
+  throw new Error("A one-part MusicXML score should pass through the simultaneous-score wrapper unchanged.");
+}
+
 if (svg.dataset.anchorPolicy !== "phrase-aware-continuation") {
   throw new Error(`Unexpected anchor policy: ${svg.dataset.anchorPolicy || "missing"}.`);
 }
@@ -61,6 +65,33 @@ const serializer = new dom.window.XMLSerializer();
 const output = serializer.serializeToString(svg);
 if (!output.includes("C4")) {
   throw new Error("The rendered sample does not contain its expected absolute C4 anchor.");
+}
+
+// Regression for scores that encode simultaneous lines as separate MusicXML
+// parts. They must share the same measure-range system instead of rendering the
+// same measure numbers once per part, one block after another.
+const splitPartScore = structuredClone(score);
+const originalPart = splitPartScore.parts[0];
+const upperTracks = originalPart.tracks.filter((track) => track.staff === "1");
+const lowerTracks = originalPart.tracks.filter((track) => track.staff === "2");
+splitPartScore.parts = [
+  { ...originalPart, id: "P1-upper", name: "Piano", tracks: upperTracks },
+  { ...originalPart, id: "P1-lower", name: "Piano", tracks: lowerTracks },
+];
+const splitPartSvg = renderRelativeScore(splitPartScore, {
+  measuresPerSystem: 4,
+  semitoneSpacing: 8,
+  transpose: 0,
+});
+
+if (splitPartSvg.dataset.sourceParts !== "2" || splitPartSvg.dataset.partGrouping !== "simultaneous") {
+  throw new Error("Expected two source parts to be normalized into simultaneous rendering.");
+}
+if (splitPartSvg.dataset.systemGroups !== "1") {
+  throw new Error(`Separate simultaneous parts must not duplicate the measure range; got ${splitPartSvg.dataset.systemGroups} system groups.`);
+}
+if (splitPartSvg.dataset.clefLanes !== "2") {
+  throw new Error(`Expected the split piano parts to remain two visual lanes, got ${splitPartSvg.dataset.clefLanes}.`);
 }
 
 // A system break must not turn a continuous melodic phrase into a new absolute
@@ -194,5 +225,5 @@ if (mxlScore.metadata.title !== score.metadata.title || mxlScore.measureCount !=
 }
 
 console.log(
-  `VexFlow smoke render OK: ${output.length} SVG characters, ${noteGlyphs} path elements; chord anchors, directional continuations, simultaneous grouping, phrase continuity, clef grouping 2→1 and MXL extraction verified.`,
+  `VexFlow smoke render OK: ${output.length} SVG characters, ${noteGlyphs} path elements; simultaneous multi-part grouping, chord anchors, directional continuations, phrase continuity, clef grouping 2→1 and MXL extraction verified.`,
 );
