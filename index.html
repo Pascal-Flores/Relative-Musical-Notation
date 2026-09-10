@@ -6,6 +6,7 @@
   <title>Relative Musical Notation — MusicXML POC</title>
   <link rel="stylesheet" href="./styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/vexflow@5.0.0/build/cjs/vexflow.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script type="module" src="./src/app.js"></script>
 </head>
 <body>
@@ -21,8 +22,8 @@
     <section class="panel controls" aria-label="Renderer controls">
       <div class="control-group actions">
         <label class="file-button">
-          <span>Load MusicXML</span>
-          <input id="fileInput" type="file" accept=".musicxml,.xml,application/xml,text/xml,application/vnd.recordare.musicxml+xml" />
+          <span>Load MusicXML / MXL</span>
+          <input id="fileInput" type="file" accept=".musicxml,.mxl,.xml,application/xml,text/xml,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml" />
         </label>
         <button id="loadSample" type="button">Load sample</button>
         <button id="downloadSvg" type="button" disabled>Download SVG</button>
@@ -52,7 +53,7 @@
       </div>
     </section>
 
-    <section id="status" class="status" role="status">Load a MusicXML file or the bundled sample.</section>
+    <section id="status" class="status" role="status">Load a MusicXML, MXL or the bundled sample.</section>
     <section id="scoreMeta" class="score-meta" hidden></section>
 
     <section class="score-shell" aria-label="Rendered relative score">
