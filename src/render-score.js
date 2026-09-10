@@ -13,10 +13,10 @@ const CORE_LANE_GAP = 0;
 const CORE_SYSTEM_GAP = 14;
 const CORE_PART_BOTTOM_GAP = 6;
 
-const PRINT_FIRST_SYSTEM_TOP = 78;
-const PRINT_LANE_PADDING = 20;
-const PRINT_LANE_MIN_HEIGHT = 48;
-const PRINT_LANE_GAP = 4;
+const PRINT_FIRST_SYSTEM_TOP = 72;
+const PRINT_LANE_PADDING = 12;
+const PRINT_LANE_MIN_HEIGHT = 36;
+const PRINT_LANE_GAP = 2;
 const PRINT_SYSTEM_GAP = 30;
 const PRINT_SEPARATOR_OFFSET = PRINT_SYSTEM_GAP / 2;
 const PRINT_BOTTOM_MARGIN = 18;
@@ -126,14 +126,19 @@ function makeSvgPath(svg, d) {
 
 function redrawChordIntervals(svg, requestedSemitoneSpacing) {
   const semitoneSpacing = Math.max(5, Math.min(14, Number(requestedSemitoneSpacing) || 8));
+  const coreLines = Array.from(
+    svg.querySelectorAll(`path[stroke="${MUSIC_STROKE}"][stroke-width="${CHORD_LINE_WIDTH}"]`),
+  );
 
-  for (const path of svg.querySelectorAll(`path[stroke="${MUSIC_STROKE}"][stroke-width="${CHORD_LINE_WIDTH}"]`)) {
-    path.remove();
-  }
+  // The core renderer already knows the exact pitch intervals and therefore
+  // draws the right number of lines for ordinary chords. Keep those lines and
+  // only repair intervals whose noteheads are too close for the core's fixed
+  // vertical glyph gap.
+  for (const path of coreLines) path.dataset.relativeChordSpine = "true";
 
   let chordCount = 0;
   let intervalCount = 0;
-  let lineCount = 0;
+  let lineCount = coreLines.length;
 
   for (const noteGroup of svg.querySelectorAll("g.vf-stavenote")) {
     const heads = Array.from(noteGroup.children || [])
@@ -154,6 +159,12 @@ function redrawChordIntervals(svg, requestedSemitoneSpacing) {
       const lower = heads[index];
       const distance = lower.y - upper.y;
       if (!(distance > 0)) continue;
+      intervalCount += 1;
+
+      // With CHORD_GAP=5 in the core renderer, an interval of 10 px or less
+      // cannot leave a visible vertical segment. Those are the only intervals
+      // reconstructed from the notehead geometry here.
+      if (distance > 10.01) continue;
 
       const semitones = Math.max(1, Math.round(distance / semitoneSpacing));
       const edgeGap = Math.min(4, Math.max(0.65, distance * 0.18));
@@ -161,7 +172,6 @@ function redrawChordIntervals(svg, requestedSemitoneSpacing) {
       const endY = lower.y - edgeGap;
       if (endY <= startY) continue;
 
-      intervalCount += 1;
       const firstOffset = -((semitones - 1) * CHORD_LINE_SPACING) / 2;
       for (let lineIndex = 0; lineIndex < semitones; lineIndex += 1) {
         const x = centerX + firstOffset + lineIndex * CHORD_LINE_SPACING;
