@@ -251,7 +251,7 @@ function drawParallelConnector(context, segment, count) {
 function drawIntervalConnector(context, segment, interval, annotate = true) {
   const magnitude = Math.abs(interval);
 
-  if (magnitude === 2 && annotate) {
+  if (magnitude === 2) {
     drawParallelConnector(context, segment, 2);
     return;
   }
@@ -272,30 +272,42 @@ function measureClusters(track, measureIndex) {
   return groupByOnset(track.events.filter((event) => event.measureIndex === measureIndex));
 }
 
+function representativeEventAtOnset(track, event) {
+  if (!event) return null;
+  const notes = track.events.filter((candidate) =>
+    candidate.kind === "note"
+    && candidate.pitch
+    && Math.abs(candidate.onset - event.onset) <= 1e-7,
+  );
+  return notes.length ? representativeNote({ notes }) : event;
+}
+
 function firstPitchedEvent(track, systemStart, systemEnd) {
-  return track.events.find((event) =>
-    event.measureIndex >= systemStart
-    && event.measureIndex < systemEnd
-    && event.kind === "note"
-    && event.pitch,
+  const event = track.events.find((candidate) =>
+    candidate.measureIndex >= systemStart
+    && candidate.measureIndex < systemEnd
+    && candidate.kind === "note"
+    && candidate.pitch,
   ) ?? null;
+  return representativeEventAtOnset(track, event);
 }
 
 function previousPitchedEvent(track, systemStart) {
   for (let index = track.events.length - 1; index >= 0; index -= 1) {
     const event = track.events[index];
     if (event.measureIndex >= systemStart) continue;
-    if (event.kind === "note" && event.pitch) return event;
+    if (event.kind === "note" && event.pitch) return representativeEventAtOnset(track, event);
   }
   return null;
 }
 
 function nextPitchedEvent(track, systemEnd) {
-  return track.events.find((event) =>
-    event.measureIndex >= systemEnd
-    && event.kind === "note"
-    && event.pitch,
+  const event = track.events.find((candidate) =>
+    candidate.measureIndex >= systemEnd
+    && candidate.kind === "note"
+    && candidate.pitch,
   ) ?? null;
+  return representativeEventAtOnset(track, event);
 }
 
 function lastPitchedEvent(track, systemStart, systemEnd) {
@@ -303,7 +315,7 @@ function lastPitchedEvent(track, systemStart, systemEnd) {
     const event = track.events[index];
     if (event.measureIndex >= systemEnd) continue;
     if (event.measureIndex < systemStart) break;
-    if (event.kind === "note" && event.pitch) return event;
+    if (event.kind === "note" && event.pitch) return representativeEventAtOnset(track, event);
   }
   return null;
 }
@@ -508,7 +520,6 @@ function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, 
   const vf = requireVexFlow();
   const geometry = systemGeometry(lane, systemStart, systemEnd, top, options.semitoneSpacing, options.transpose);
   const { anchorMidi, anchorY, rowHeight } = geometry;
-  const rowBottom = top + rowHeight;
   const measureBundles = [];
   const pitchStates = new Map();
 
@@ -591,17 +602,19 @@ function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, 
 
     if (firstItem && previousPitch && !phraseStartsHere) {
       const previousMidi = previousPitch.pitch.midi + options.transpose;
-      const previousY = pitchYForMidi(previousMidi, anchorMidi, anchorY, options.semitoneSpacing);
+      const interval = firstItem.isRest ? 0 : firstItem.pitchMidi - previousMidi;
+      const incomingStartY = firstItem.isRest
+        ? firstItem.y
+        : firstItem.y + interval * options.semitoneSpacing * 0.5;
       const incoming = shortenSegment(
         options.leftMargin + 2,
-        previousY,
+        incomingStartY,
         firstItem.beginX,
         firstItem.y,
         0,
         CONNECTOR_GAP,
       );
       if (incoming) {
-        const interval = firstItem.isRest ? 0 : firstItem.pitchMidi - previousMidi;
         drawIntervalConnector(context, incoming, interval, !firstItem.isRest);
       }
     }
@@ -624,8 +637,18 @@ function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, 
     const lastPitch = track ? lastPitchedEvent(track, systemStart, systemEnd) : null;
     const followingPitch = track ? nextPitchedEvent(track, systemEnd) : null;
     if (lastItem && lastPitch && followingPitch && !startsNewPhrase(lastPitch, followingPitch)) {
-      const outgoing = shortenSegment(lastItem.endX, lastItem.y, endX - 5, lastItem.y, CONNECTOR_GAP, 0);
-      if (outgoing) drawIntervalConnector(context, outgoing, 0, false);
+      const followingMidi = followingPitch.pitch.midi + options.transpose;
+      const interval = followingMidi - lastItem.pitchMidi;
+      const outgoingTargetY = lastItem.y - interval * options.semitoneSpacing * 0.5;
+      const outgoing = shortenSegment(
+        lastItem.endX,
+        lastItem.y,
+        endX - 5,
+        outgoingTargetY,
+        CONNECTOR_GAP,
+        0,
+      );
+      if (outgoing) drawIntervalConnector(context, outgoing, interval, false);
     }
   }
 
@@ -740,7 +763,6 @@ function drawSystemGroupFrame(context, group, options) {
   drawLine(context, endX, top, endX, bottom, { stroke: "#d6dade", width: 1 });
 }
 
-
 export function renderRelativeScore(score, userOptions = {}) {
   const vf = requireVexFlow();
   const options = {
@@ -791,5 +813,7 @@ export function renderRelativeScore(score, userOptions = {}) {
   svg.dataset.clefLanes = String(layout.rows.length);
   svg.dataset.systemGroups = String(layout.groups.length);
   svg.dataset.anchorPolicy = "phrase-aware-continuation";
+  svg.dataset.chordAnchorPolicy = "representative-highest";
+  svg.dataset.continuationPolicy = "directional-half-interval";
   return svg;
 }
