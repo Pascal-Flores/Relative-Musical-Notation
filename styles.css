@@ -157,8 +157,8 @@ main {
 
 .score-shell {
   margin-top: 12px;
-  background: #fff;
-  border: 1px solid #dfe2e6;
+  background: #e8eaed;
+  border: 1px solid #d1d5da;
   border-radius: 12px;
   overflow: auto;
 }
@@ -168,12 +168,46 @@ main {
   min-width: 100%;
 }
 
-.render-host > svg {
-  display: block;
-  width: max-content;
-  min-width: 100%;
-  height: auto;
+.pdf-pages {
+  display: grid;
+  justify-items: center;
+  gap: 26px;
+  padding: 26px;
+  min-width: min-content;
+}
+
+.pdf-page {
+  position: relative;
+  width: min(900px, calc(100vw - 120px));
+  min-width: 620px;
+  aspect-ratio: 210 / 297;
+  padding: 5.714%;
+  overflow: hidden;
   background: #fff;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 14%);
+}
+
+.pdf-page-content {
+  width: 100%;
+  height: calc(100% - 18px);
+  overflow: hidden;
+}
+
+.pdf-page-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  background: #fff;
+}
+
+.pdf-page-number {
+  position: absolute;
+  right: 5.714%;
+  bottom: 2.2%;
+  color: #8a9199;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .empty-state {
@@ -183,13 +217,14 @@ main {
   justify-items: center;
   gap: 4px;
   color: #7b838d;
+  background: #fff;
 }
 
 .empty-state strong {
   color: #464c54;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 760px) {
   .page-header {
     padding-top: 24px;
   }
@@ -200,5 +235,14 @@ main {
 
   .controls {
     border-radius: 8px;
+  }
+
+  .pdf-pages {
+    justify-items: start;
+    padding: 16px;
+  }
+
+  .pdf-page {
+    width: 620px;
   }
 }
