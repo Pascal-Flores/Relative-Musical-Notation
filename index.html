@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="./styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/vexflow@5.0.0/build/cjs/vexflow.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/dist/svg2pdf.umd.min.js"></script>
   <script type="module" src="./src/app.js"></script>
 </head>
 <body>
@@ -26,6 +28,7 @@
           <input id="fileInput" type="file" accept=".musicxml,.mxl,.xml,application/xml,text/xml,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml" />
         </label>
         <button id="loadSample" type="button">Load sample</button>
+        <button id="downloadPdf" type="button" disabled>Download PDF (A4)</button>
         <button id="downloadSvg" type="button" disabled>Download SVG</button>
       </div>
 
@@ -60,7 +63,7 @@
       <div id="renderHost" class="render-host">
         <div class="empty-state">
           <strong>No score loaded</strong>
-          <span>The SVG score will appear here.</span>
+          <span>The paginated A4 preview will appear here.</span>
         </div>
       </div>
     </section>
