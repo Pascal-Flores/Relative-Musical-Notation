@@ -18,7 +18,6 @@ const score = parseMusicXML(source);
 const svg = renderRelativeScore(score, {
   measuresPerSystem: 4,
   semitoneSpacing: 8,
-  minIntervalLabel: 3,
   transpose: 0,
 });
 
