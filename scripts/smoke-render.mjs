@@ -36,6 +36,14 @@ if (svg.dataset.clefLanes !== "2") {
   throw new Error(`Expected the piano sample to keep treble and bass in 2 clef lanes, got ${svg.dataset.clefLanes}.`);
 }
 
+if (svg.dataset.systemGroups !== "1") {
+  throw new Error(`Expected the four-measure sample to form 1 simultaneous system group, got ${svg.dataset.systemGroups || "missing"}.`);
+}
+
+if (svg.dataset.anchorPolicy !== "phrase-aware-continuation") {
+  throw new Error(`Unexpected anchor policy: ${svg.dataset.anchorPolicy || "missing"}.`);
+}
+
 const noteGlyphs = svg.querySelectorAll("path").length;
 if (noteGlyphs === 0) {
   throw new Error("The SVG contains no path glyphs; rhythmic engraving did not render.");
@@ -45,6 +53,29 @@ const serializer = new dom.window.XMLSerializer();
 const output = serializer.serializeToString(svg);
 if (!output.includes("C4")) {
   throw new Error("The rendered sample does not contain its expected absolute C4 anchor.");
+}
+
+// A system break must not turn a continuous melodic phrase into a new absolute
+// anchor. It gets continuation strokes instead, and the treble/bass lanes stay
+// grouped as one simultaneous block per measure range.
+const multiSystemSvg = renderRelativeScore(score, {
+  measuresPerSystem: 2,
+  semitoneSpacing: 8,
+  transpose: 0,
+});
+const multiOutput = serializer.serializeToString(multiSystemSvg);
+
+if (multiSystemSvg.dataset.systemGroups !== "2") {
+  throw new Error(`Expected 2 simultaneous system groups, got ${multiSystemSvg.dataset.systemGroups || "missing"}.`);
+}
+
+if (multiOutput.includes("treble · voice") || multiOutput.includes("bass · voice")) {
+  throw new Error("Per-lane clef/voice labels should not consume vertical layout space.");
+}
+
+const c4AnchorCount = (multiOutput.match(/>C4<\/text>/g) || []).length;
+if (c4AnchorCount !== 1) {
+  throw new Error(`Expected one C4 absolute anchor across a continuous two-system phrase, got ${c4AnchorCount}.`);
 }
 
 // Regression test for multi-voice display: if both piano staves use the same
@@ -90,5 +121,5 @@ if (mxlScore.metadata.title !== score.metadata.title || mxlScore.measureCount !=
 }
 
 console.log(
-  `VexFlow smoke render OK: ${output.length} SVG characters, ${noteGlyphs} path elements; clef grouping 2→1 and MXL extraction verified.`,
+  `VexFlow smoke render OK: ${output.length} SVG characters, ${noteGlyphs} path elements; simultaneous grouping, phrase continuity, clef grouping 2→1 and MXL extraction verified.`,
 );
