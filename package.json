@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check src/musicxml.js && node --check src/render.js && node --check src/app.js"
+    "check": "node --check src/mxl.js && node --check src/musicxml.js && node --check src/render.js && node --check src/app.js"
   }
 }
