@@ -2,9 +2,10 @@ import { midiToPitchLabel } from "./musicxml.js";
 
 const ANCHOR_LINE = 2.5;
 const CONNECTOR_GAP = 6;
-const CHORD_GAP = 4;
-const CHORD_PARALLEL_SPACING = 1.8;
+const CHORD_GAP = 5;
 const PARALLEL_CONNECTOR_OFFSET = 2.4;
+const CHORD_PARALLEL_REFERENCE_LINES = 5;
+const CHORD_PARALLEL_WIDTH_RATIO = 0.92;
 const DEFAULT_CLEF = { sign: "G", line: 2, octaveChange: 0, key: "G:2:0", label: "treble" };
 
 function requireVexFlow() {
@@ -422,36 +423,38 @@ function plottedGeometry(item, transpose) {
   };
 }
 
-function centeredOffsets(count, spacing) {
-  return Array.from({ length: count }, (_, index) => (index - (count - 1) / 2) * spacing);
+function drawChordParallelLines(context, centerX, startY, endY, count, noteWidth) {
+  if (!Number.isFinite(count) || count <= 0 || endY <= startY) return;
+
+  const usableWidth = Math.max(2, noteWidth * CHORD_PARALLEL_WIDTH_RATIO);
+  const gap = usableWidth / Math.max(1, CHORD_PARALLEL_REFERENCE_LINES - 1);
+  const offsets = Array.from({ length: count }, (_, index) => (index - (count - 1) / 2) * gap);
+
+  for (const offset of offsets) {
+    drawLine(context, centerX + offset, startY, centerX + offset, endY, {
+      stroke: "#727a84",
+      width: 1.15,
+    });
+  }
 }
 
 function drawChordSpine(context, item) {
   if (item.isRest || item.ys.length < 2 || item.orderedNotes.length < 2) return;
 
-  const tones = item.orderedNotes
-    .map((event, index) => ({ event, y: item.ys[index] }))
-    .filter((tone) => Number.isFinite(tone.y))
-    .sort((a, b) => a.event.pitch.midi - b.event.pitch.midi);
+  const noteWidth = Math.max(4, item.endX - item.beginX);
 
-  for (let index = 1; index < tones.length; index += 1) {
-    const previous = tones[index - 1];
-    const current = tones[index];
-    const semitoneGap = Math.max(1, Math.round(Math.abs(current.event.pitch.midi - previous.event.pitch.midi)));
-    const topY = Math.min(previous.y, current.y);
-    const bottomY = Math.max(previous.y, current.y);
-    const distance = bottomY - topY;
-    const endpointGap = Math.min(CHORD_GAP, Math.max(0.8, distance * 0.28));
-    const startY = topY + endpointGap;
-    const endY = bottomY - endpointGap;
+  for (let index = 1; index < item.orderedNotes.length; index += 1) {
+    const previousY = item.ys[index - 1];
+    const currentY = item.ys[index];
+    const startY = Math.min(previousY, currentY) + CHORD_GAP;
+    const endY = Math.max(previousY, currentY) - CHORD_GAP;
     if (endY <= startY) continue;
 
-    for (const offset of centeredOffsets(semitoneGap, CHORD_PARALLEL_SPACING)) {
-      drawLine(context, item.centerX + offset, startY, item.centerX + offset, endY, {
-        stroke: "#727a84",
-        width: 1,
-      });
-    }
+    const previousPitch = item.orderedNotes[index - 1]?.pitch?.midi;
+    const currentPitch = item.orderedNotes[index]?.pitch?.midi;
+    const semitoneGap = Math.max(0, Math.round(Math.abs((currentPitch ?? 0) - (previousPitch ?? 0))));
+
+    drawChordParallelLines(context, item.centerX, startY, endY, semitoneGap, noteWidth);
   }
 }
 
@@ -663,6 +666,5 @@ export function renderRelativeScore(score, userOptions = {}) {
   svg.setAttribute("aria-label", `${score.metadata.title || "Score"} in relative chromatic notation`);
   svg.dataset.renderer = "VexFlow 5";
   svg.dataset.clefLanes = String(layout.rows.length);
-  svg.dataset.chordEncoding = "parallel-lines-per-semitone";
   return svg;
 }
