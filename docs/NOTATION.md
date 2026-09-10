@@ -16,23 +16,23 @@ No horizontal pitch-reference lines are required.
 
 ## 2. Absolute pitch anchors
 
-Each rendered melodic line starts with an absolute pitch label such as `C4`, `F#4` or `Bb3`.
+An absolute pitch label such as `C4`, `F#4` or `Bb3` is attached directly below the note it identifies.
 
-Everything after that anchor can be interpreted relatively from the contour and interval segments.
+In the current POC, the first pitched note of every rendered system receives such an anchor. The label is deliberately local rather than placed in the left margin, so the same mechanism can later be used to re-anchor a phrase or section under any note in the score.
 
-In the current POC, every rendered system is automatically re-anchored on its first pitched note. Later versions could also re-anchor on:
+Everything after an anchor can be interpreted relatively from the contour and interval segments.
+
+Later versions can add re-anchors at:
 
 - explicit phrase boundaries;
 - rehearsal marks;
 - sections;
 - user-selected points;
-- long rests.
-
-The re-anchor also acts as a resynchronisation point for the reader.
+- other musically useful resynchronisation points.
 
 ## 3. Melodic connections
 
-Successive pitched events in one voice are linked with straight segments.
+Successive musical events in one voice are linked with straight segments attached to the actual notehead/rest positions produced by VexFlow.
 
 The segment itself encodes two things:
 
@@ -47,13 +47,23 @@ The current default is to omit labels for intervals smaller than 3 semitones:
 - 2 semitones: geometry only;
 - 3 semitones and above: unsigned numeric label (`3`, `4`, `5`, `7`, `12`, ...).
 
-This is an experiment rather than a fixed rule. The UI exposes the minimum labelled interval so that reading tests can determine whether `2`, or even `1`, needs explicit annotation.
+This remains adjustable in the UI so reading tests can determine the useful threshold.
 
-A repeated pitch has a horizontal connector. It does not need an interval label by default.
+A repeated pitch has a horizontal connector and does not need an interval label by default.
 
-A rest breaks the melodic connection in the POC.
+### Rests
 
-When an event is a chord, all simultaneous pitches are stacked at the same horizontal position. For the first experiment, the melodic connector entering/leaving a chord follows its highest note. This is only a provisional voice-leading rule.
+A rest does not reset the melodic reference.
+
+Its conventional rhythmic glyph is drawn at the same vertical pitch level as the last sounded note. The contour therefore stays horizontal through the silence. The next pitched note is still measured from the last sounded pitch, so the reader never loses the relative reference merely because a rest occurred.
+
+If a system begins with rests before its first pitched event, those rests use the system anchor pitch as their temporary vertical reference.
+
+### Chords
+
+Simultaneous notes are stacked at the same horizontal time position and connected by a vertical spine. This makes the chord read as one vertical pitch structure rather than as unrelated noteheads.
+
+For the current POC, melodic connections entering or leaving a chord follow its highest pitch as the representative melodic note. This is still a provisional voice-leading rule; later versions may use an explicit voice note instead.
 
 ## 4. Rhythm
 
@@ -68,7 +78,7 @@ It keeps the compact visual grammar of:
 - augmentation dots;
 - conventional rest families.
 
-VexFlow 5 now engraves these rhythmic primitives. Relative Musical Notation changes their vertical pitch placement but does not reinvent their rhythmic meaning.
+VexFlow 5 engraves these rhythmic primitives. Relative Musical Notation changes their vertical pitch placement but does not reinvent their rhythmic meaning.
 
 Horizontal note position represents musical onset inside the measure, while duration is primarily read from the rhythmic symbol rather than from note length.
 
@@ -104,7 +114,9 @@ This invariance is one of the main properties the POC is intended to test.
 
 The current renderer uses a hidden virtual VexFlow stave. The stave spacing is chosen so that half of one virtual VexFlow line-step equals exactly one chromatic semitone step in the visible notation.
 
-The hidden stave and its ledger lines are not drawn. VexFlow remains responsible for note glyphs, stems, beams, dots, rests and rhythmic horizontal formatting; the POC supplies the relative chromatic vertical positions and the melodic connectors.
+The hidden stave and its ledger lines are not drawn. VexFlow remains responsible for note glyphs, stems, beams, dots, rests and rhythmic horizontal formatting; the POC supplies the relative chromatic vertical positions, local absolute anchors, chord spines and melodic connectors.
+
+Connectors use VexFlow's own notehead coordinates (`getYs()`, `getNoteHeadBeginX()`, `getNoteHeadEndX()`) rather than recomputing approximate positions independently. This keeps the contour attached to the actual engraved glyphs.
 
 ## 9. Open design questions
 
@@ -113,7 +125,7 @@ The next useful experiments are:
 1. How often should an absolute anchor be repeated?
 2. What is the smallest interval that benefits from an explicit numeric label: 1, 2, 3, or larger?
 3. Should interval numbers be a normal part of the notation or mostly a learning aid?
-4. How should chords expose their internal intervals?
+4. Which note of a polyphonic chord should carry the melodic continuation when MusicXML does not make that voice-leading explicit?
 5. How should independent simultaneous voices be distinguished without relying on colour?
 6. Should very large leaps be compressed visually or always remain metrically exact?
 7. How should enharmonic spelling (`D#` versus `Eb`) be represented when pitch itself is chromatic?
