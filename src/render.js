@@ -7,8 +7,8 @@ const PARALLEL_CONNECTOR_OFFSET = 2.4;
 const CHORD_PARALLEL_REFERENCE_LINES = 5;
 const CHORD_PARALLEL_WIDTH_RATIO = 0.92;
 const PHRASE_BREAK_MIN_QUARTERS = 1;
-const LANE_GAP = 4;
-const SYSTEM_GAP = 18;
+const LANE_GAP = 0;
+const SYSTEM_GAP = 14;
 const SYSTEM_SEPARATOR_OFFSET = 8;
 const DEFAULT_CLEF = { sign: "G", line: 2, octaveChange: 0, key: "G:2:0", label: "treble" };
 
@@ -440,8 +440,8 @@ function systemGeometry(lane, systemStart, systemEnd, top, semitoneSpacing, tran
   const minDelta = deltas.length ? Math.min(...deltas) : 0;
   const maxDelta = deltas.length ? Math.max(...deltas) : 0;
   const span = maxDelta - minDelta;
-  const pitchTop = top + 42;
-  const rowHeight = Math.max(88, 84 + span * semitoneSpacing);
+  const pitchTop = top + 36;
+  const rowHeight = 72 + span * semitoneSpacing;
   const anchorY = pitchTop + maxDelta * semitoneSpacing;
 
   return { anchor, anchorMidi, minDelta, maxDelta, span, pitchTop, anchorY, rowHeight };
