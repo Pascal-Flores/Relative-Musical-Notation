@@ -9,7 +9,7 @@ There is no five-line staff.
 Pitch is represented vertically on a uniform chromatic axis:
 
 - one vertical step = one semitone;
-- +12 semitones always has twelve times the vertical distance of +1;
+- 12 semitones always have twelve times the vertical distance of 1 semitone;
 - the same interval always produces the same slope when horizontal spacing is equal.
 
 No horizontal pitch-reference lines are required.
@@ -34,12 +34,22 @@ The re-anchor also acts as a resynchronisation point for the reader.
 
 Successive pitched events in one voice are linked with straight segments.
 
-The segment encodes interval direction and magnitude geometrically. An optional signed semitone label is rendered at the midpoint:
+The segment itself encodes two things:
 
-- `+2`: up one whole tone;
-- `-1`: down one semitone;
-- `0`: repeated pitch;
-- `+12`: up one octave.
+- its slope gives direction: rising or falling;
+- its vertical displacement gives chromatic interval size in semitones.
+
+A numeric interval label, when present, therefore does **not** carry a `+` or `-` sign. For example, both an ascending and descending perfect fourth may be labelled `5`; their direction is already visible.
+
+The current default is to omit labels for intervals smaller than 3 semitones:
+
+- 1 semitone: geometry only;
+- 2 semitones: geometry only;
+- 3 semitones and above: unsigned numeric label (`3`, `4`, `5`, `7`, `12`, ...).
+
+This is an experiment rather than a fixed rule. The UI exposes the minimum labelled interval so that reading tests can determine whether `2`, or even `1`, needs explicit annotation.
+
+A repeated pitch has a horizontal connector. It does not need an interval label by default.
 
 A rest breaks the melodic connection in the POC.
 
@@ -58,7 +68,9 @@ It keeps the compact visual grammar of:
 - augmentation dots;
 - conventional rest families.
 
-Horizontal note position represents musical onset inside the measure, but duration is primarily read from the rhythmic symbol rather than from note length.
+VexFlow 5 now engraves these rhythmic primitives. Relative Musical Notation changes their vertical pitch placement but does not reinvent their rhythmic meaning.
+
+Horizontal note position represents musical onset inside the measure, while duration is primarily read from the rhythmic symbol rather than from note length.
 
 ## 5. Measures
 
@@ -80,22 +92,30 @@ Global chromatic transposition adds the same number of semitones to every absolu
 
 Because the notation is relative inside each line:
 
-- interval labels do not change;
+- interval magnitudes do not change;
 - melodic slopes do not change;
 - vertical shape does not change;
+- rhythmic notation does not change;
 - only the absolute anchor labels change.
 
 This invariance is one of the main properties the POC is intended to test.
 
-## 8. Open design questions
+## 8. Rendering model
+
+The current renderer uses a hidden virtual VexFlow stave. The stave spacing is chosen so that half of one virtual VexFlow line-step equals exactly one chromatic semitone step in the visible notation.
+
+The hidden stave and its ledger lines are not drawn. VexFlow remains responsible for note glyphs, stems, beams, dots, rests and rhythmic horizontal formatting; the POC supplies the relative chromatic vertical positions and the melodic connectors.
+
+## 9. Open design questions
 
 The next useful experiments are:
 
 1. How often should an absolute anchor be repeated?
-2. Should interval numbers remain visible in normal reading, or only in a learning mode?
-3. How should chords expose their internal intervals?
-4. How should independent simultaneous voices be distinguished without relying on colour?
-5. Should very large leaps be compressed visually or always remain metrically exact?
-6. How should enharmonic spelling (`D#` versus `Eb`) be represented when pitch itself is chromatic?
-7. How should ties, slurs, glissandi and phrase connections differ visually from the relative-pitch connector?
-8. Should line breaks follow measures, phrases, or an engraving algorithm that considers both?
+2. What is the smallest interval that benefits from an explicit numeric label: 1, 2, 3, or larger?
+3. Should interval numbers be a normal part of the notation or mostly a learning aid?
+4. How should chords expose their internal intervals?
+5. How should independent simultaneous voices be distinguished without relying on colour?
+6. Should very large leaps be compressed visually or always remain metrically exact?
+7. How should enharmonic spelling (`D#` versus `Eb`) be represented when pitch itself is chromatic?
+8. How should ties, slurs, glissandi and phrase connections differ visually from the relative-pitch connector?
+9. Should line breaks follow measures, phrases, or an engraving algorithm that considers both?
