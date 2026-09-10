@@ -7,11 +7,12 @@ The renderer takes a MusicXML file (`.musicxml`, `.xml` or compressed `.mxl`) an
 - no horizontal staff lines;
 - one vertical step represents one semitone;
 - absolute pitch labels (`C4`, `F#4`, ...) are used at melodic phrase starts rather than repeated mechanically at every rendered line;
-- when a melodic phrase continues across a line break, the contour continues with short incoming/outgoing strokes instead of a new pitch label;
+- when a phrase starts on a chord, the absolute anchor is attached to the same representative tone used by the melodic contour (currently the highest chord tone);
+- when a melodic phrase continues across a line break, the contour continues with incoming/outgoing strokes that already point toward the adjacent pitch instead of ending horizontally;
 - an absolute pitch label is placed on the side opposite the stem: below an up-stem note, above a down-stem note;
 - successive musical events in a voice are connected by segments with a small visual gap around the glyphs;
 - a 1-semitone interval uses one connecting line;
-- a 2-semitone interval uses two parallel connecting lines;
+- a 2-semitone interval uses two parallel connecting lines, including at system continuations;
 - intervals of 3 semitones and above use one connecting line plus an unsigned numeric magnitude (`3`, `4`, `5`, `6`, ...);
 - inside chords, adjacent chord tones are joined by as many thin parallel vertical lines as there are semitones between them (for example C–E = 4 lines, E–G = 3 lines);
 - chord-interval lines use fixed horizontal spacing; five lines span almost the full notehead width, while smaller counts remain centered with the same spacing;
@@ -41,7 +42,7 @@ The bundled piano sample therefore has one treble lane and one bass lane inside 
 
 Each merged voice keeps its own melodic connector chain and rests. If MusicXML does not specify stem directions, simultaneous voices alternate up/down stems to make them easier to separate visually.
 
-A line break by itself does not create a new absolute pitch anchor. The POC currently treats a voice's first entrance, or a silence of at least one quarter-note before the next pitch, as a provisional new-phrase boundary. Otherwise the melodic connector is continued across the system break. This heuristic is intentionally temporary until explicit phrase semantics are supported.
+A line break by itself does not create a new absolute pitch anchor. The POC currently treats a voice's first entrance, or a silence of at least one quarter-note before the next pitch, as a provisional new-phrase boundary. Otherwise the melodic connector is split across the system boundary: the outgoing half already slopes toward the next representative pitch and the incoming half completes the same interval on the following line. This heuristic is intentionally temporary until explicit phrase semantics are supported.
 
 Clef changes occurring inside a rendered system are not yet split automatically; grouping currently uses the clef active at the start of that system.
 
