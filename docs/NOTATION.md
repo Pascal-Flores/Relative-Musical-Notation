@@ -23,6 +23,8 @@ The label is placed on the side opposite the stem so it does not crowd the rhyth
 - up stem → absolute pitch below the note;
 - down stem → absolute pitch above the note.
 
+If a phrase begins on a chord, the anchor is attached to the same chord tone used as the melodic representative. In the current POC that representative is the highest chord tone. This keeps the absolute anchor consistent with the point from which the incoming/outgoing melodic contour is drawn.
+
 A graphical system break does **not** automatically create a new absolute-pitch anchor. If the same melodic phrase continues on the next line, the contour gets a short outgoing continuation at the end of the previous system and an incoming continuation into the first event of the next system.
 
 The POC currently starts a new anchored phrase when either:
@@ -50,13 +52,13 @@ Small melodic intervals are encoded by the number of complete connector lines be
 
 A repeated pitch has one horizontal connector and no interval annotation.
 
-At a system boundary, a continuous phrase uses the same connector logic rather than resetting the pitch reference. The previous pitch is mapped into the next system's chromatic geometry so the incoming segment keeps the correct interval and slope.
+At a system boundary, a continuous phrase is treated as one broken connector rather than as two unrelated horizontal stubs. The outgoing half already slopes in the direction of the next representative pitch, and the incoming half completes that same interval on the next line. The chromatic displacement is split between both sides of the break so the direction is visible immediately without duplicating the full vertical leap twice. A two-semitone continuation keeps its two-line encoding on both sides of the break.
 
 ### Rests
 
 A rest does not reset the melodic reference. Its conventional rhythmic glyph is drawn at the same vertical pitch level as the last sounded note. The next pitched note is still measured from that last sounded pitch.
 
-At the beginning of a continued system, the pitch state is initialized from the last sounded pitch of the previous system. A leading rest therefore keeps the correct reference instead of being reset to the new line's first note.
+At the beginning of a continued system, the pitch state is initialized from the last sounded representative pitch of the previous system. A leading rest therefore keeps the correct reference instead of being reset to the new line's first note.
 
 ### Chords
 
@@ -77,7 +79,7 @@ The spacing between adjacent chord-interval lines is fixed independently of the 
 
 The vertical lines still stop short of the noteheads so the chord remains visually open.
 
-For the current POC, melodic connections entering or leaving a chord follow its highest pitch as the representative melodic note.
+For the current POC, melodic connections entering or leaving a chord follow its highest pitch as the representative melodic note. Phrase-start anchors on chords now use that same highest representative pitch instead of whichever MusicXML chord member happened to occur first.
 
 ## 4. Rhythm
 
@@ -139,7 +141,7 @@ Connectors use VexFlow's own notehead coordinates (`getYs()`, `getNoteHeadBeginX
 2. Is one quarter-note of silence a useful fallback phrase threshold, or should it depend on tempo/meter/context?
 3. Is the one-line / two-line distinction for semitone and whole-tone melodic motion clear enough at different print sizes?
 4. What should happen for unusually large gaps between adjacent chord tones if their line bundle would exceed a notehead's width?
-5. Which note of a polyphonic chord should carry the melodic continuation when MusicXML does not make that voice-leading explicit?
+5. Should the highest chord tone remain the default melodic representative, or should voice-leading metadata choose another tone when available?
 6. How should more than two simultaneous voices sharing one clef be distinguished without relying on colour?
 7. Should clef changes inside a system force an automatic lane split or a new system?
 8. Should very large leaps be compressed visually or always remain metrically exact?
