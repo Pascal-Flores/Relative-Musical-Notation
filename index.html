@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Relative Musical Notation — MusicXML POC</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/vexflow@5.0.0/build/cjs/vexflow.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"></script>
+  <script type="module" src="./src/app.js"></script>
+</head>
+<body>
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Proof of concept</p>
+      <h1>Relative Musical Notation</h1>
+      <p class="lede">MusicXML rendered without staff lines: vertical distance is chromatic, rhythm is engraved by VexFlow.</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel controls" aria-label="Renderer controls">
+      <div class="control-group actions">
+        <label class="file-button">
+          <span>Load MusicXML / MXL</span>
+          <input id="fileInput" type="file" accept=".musicxml,.mxl,.xml,application/xml,text/xml,application/vnd.recordare.musicxml,application/vnd.recordare.musicxml+xml" />
+        </label>
+        <button id="loadSample" type="button">Load sample</button>
+        <button id="downloadPdf" type="button" disabled>Download PDF (A4)</button>
+        <button id="downloadSvg" type="button" disabled>Download SVG</button>
+      </div>
+
+      <div class="control-group options">
+        <label>
+          <span>Measures / line</span>
+          <input id="measuresPerSystem" type="number" min="1" max="8" step="1" value="4" />
+        </label>
+
+        <label>
+          <span>Semitone spacing</span>
+          <div class="inline-control">
+            <input id="semitoneSpacing" type="range" min="5" max="14" step="1" value="8" />
+            <output id="semitoneSpacingValue" for="semitoneSpacing">8 px</output>
+          </div>
+        </label>
+
+        <label>
+          <span>Transpose</span>
+          <div class="inline-control">
+            <input id="transpose" type="number" min="-24" max="24" step="1" value="0" />
+            <span>semitones</span>
+          </div>
+        </label>
+      </div>
+    </section>
+
+    <section id="status" class="status" role="status">Load a MusicXML, MXL or the bundled sample.</section>
+    <section id="scoreMeta" class="score-meta" hidden></section>
+
+    <section class="score-shell" aria-label="Rendered relative score">
+      <div id="renderHost" class="render-host">
+        <div class="empty-state">
+          <strong>No score loaded</strong>
+          <span>The paginated A4 preview will appear here.</span>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
