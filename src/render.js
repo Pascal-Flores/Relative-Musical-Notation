@@ -3,7 +3,8 @@ import { midiToPitchLabel } from "./musicxml.js";
 const ANCHOR_LINE = 2.5;
 const CONNECTOR_GAP = 6;
 const CHORD_GAP = 5;
-const PARALLEL_CONNECTOR_SPACING = 3.5;
+const PARALLEL_CONNECTOR_OFFSET = 2.4;
+const DEFAULT_CLEF = { sign: "G", line: 2, octaveChange: 0, key: "G:2:0", label: "treble" };
 
 function requireVexFlow() {
   const vf = globalThis.VexFlow;
@@ -95,7 +96,7 @@ function makeDummyKeys(count) {
   return Array.from({ length: Math.max(1, count) }, (_, index) => keys[index % keys.length]);
 }
 
-function makeVexNote(vf, cluster, stave, anchorMidi, transpose, referenceMidi) {
+function makeVexNote(vf, cluster, stave, anchorMidi, transpose, referenceMidi, defaultStemDirection = null) {
   const isRest = cluster.notes.length === 0;
   const orderedNotes = isRest ? [] : [...cluster.notes].sort((a, b) => a.pitch.midi - b.pitch.midi);
   const duration = toVexDuration(clusterType(cluster), clusterDots(cluster), isRest);
@@ -115,6 +116,7 @@ function makeVexNote(vf, cluster, stave, anchorMidi, transpose, referenceMidi) {
   const explicitStem = cluster.notes[0]?.stem;
   if (explicitStem === "up") note.setStemDirection(vf.Stem.UP);
   else if (explicitStem === "down") note.setStemDirection(vf.Stem.DOWN);
+  else if (!isRest && defaultStemDirection) note.setStemDirection(defaultStemDirection);
 
   note.setStave(stave);
   note.drawLedgerLines = () => undefined;
@@ -216,45 +218,39 @@ function drawIntervalLabel(context, x, y, magnitude) {
   context.restore();
 }
 
-function offsetSegment(segment, offset) {
+function drawParallelConnector(context, segment, count) {
   const dx = segment.x2 - segment.x1;
   const dy = segment.y2 - segment.y1;
   const length = Math.hypot(dx, dy);
-  if (!Number.isFinite(length) || length <= 0) return segment;
+  if (length <= 0) return;
 
   const nx = -dy / length;
   const ny = dx / length;
-  return {
-    x1: segment.x1 + nx * offset,
-    y1: segment.y1 + ny * offset,
-    x2: segment.x2 + nx * offset,
-    y2: segment.y2 + ny * offset,
-  };
-}
-
-function drawParallelConnectors(context, segment, count) {
-  const offsets = count <= 1
-    ? [0]
-    : Array.from({ length: count }, (_, index) =>
-      (index - (count - 1) / 2) * PARALLEL_CONNECTOR_SPACING);
+  const offsets = count === 2
+    ? [-PARALLEL_CONNECTOR_OFFSET, PARALLEL_CONNECTOR_OFFSET]
+    : [0];
 
   for (const offset of offsets) {
-    const shifted = offsetSegment(segment, offset);
-    drawLine(context, shifted.x1, shifted.y1, shifted.x2, shifted.y2, {
-      stroke: "#727a84",
-      width: 1.4,
-    });
+    drawLine(
+      context,
+      segment.x1 + nx * offset,
+      segment.y1 + ny * offset,
+      segment.x2 + nx * offset,
+      segment.y2 + ny * offset,
+      { stroke: "#727a84", width: 1.4 },
+    );
   }
 }
 
-function drawRelativeConnector(context, segment, interval, annotate = true) {
+function drawIntervalConnector(context, segment, interval, annotate = true) {
   const magnitude = Math.abs(interval);
 
-  // Small chromatic motion is encoded by the connector itself:
-  // one semitone = one connecting line, two semitones = two parallel lines.
-  // Larger intervals return to one line and carry their numeric magnitude.
-  const lineCount = magnitude === 2 ? 2 : 1;
-  drawParallelConnectors(context, segment, lineCount);
+  if (magnitude === 2 && annotate) {
+    drawParallelConnector(context, segment, 2);
+    return;
+  }
+
+  drawParallelConnector(context, segment, 1);
 
   if (annotate && magnitude >= 3) {
     drawIntervalLabel(
@@ -270,8 +266,64 @@ function measureClusters(track, measureIndex) {
   return groupByOnset(track.events.filter((event) => event.measureIndex === measureIndex));
 }
 
-function measurePlan(part, track, measureIndex, stave, context, anchorMidi, options, pitchState) {
-  const vf = requireVexFlow();
+function firstPitchedEvent(track, systemStart, systemEnd) {
+  return track.events.find((event) =>
+    event.measureIndex >= systemStart
+    && event.measureIndex < systemEnd
+    && event.kind === "note"
+    && event.pitch,
+  ) ?? null;
+}
+
+function trackClefInSystem(track, systemStart, systemEnd) {
+  const event = track.events.find((candidate) =>
+    candidate.measureIndex >= systemStart && candidate.measureIndex < systemEnd,
+  );
+  return event?.clef ?? track.clef ?? DEFAULT_CLEF;
+}
+
+function clefRank(clef) {
+  if (clef.sign === "G") return 0;
+  if (clef.sign === "C") return 1;
+  if (clef.sign === "F") return 2;
+  return 3;
+}
+
+function buildClefLanes(part, systemStart, systemEnd) {
+  const lanes = new Map();
+
+  for (const track of part.tracks) {
+    const active = track.events.some((event) =>
+      event.measureIndex >= systemStart && event.measureIndex < systemEnd,
+    );
+    if (!active) continue;
+
+    const clef = trackClefInSystem(track, systemStart, systemEnd);
+    const key = clef.key || `${clef.sign}:${clef.line}:${clef.octaveChange || 0}`;
+    if (!lanes.has(key)) lanes.set(key, { key, clef, tracks: [] });
+    lanes.get(key).tracks.push(track);
+  }
+
+  return Array.from(lanes.values())
+    .map((lane) => ({
+      ...lane,
+      tracks: lane.tracks.sort((a, b) => Number(a.staff) - Number(b.staff) || Number(a.voice) - Number(b.voice)),
+    }))
+    .sort((a, b) => clefRank(a.clef) - clefRank(b.clef) || a.key.localeCompare(b.key));
+}
+
+function buildVoiceMeasurePlan(
+  vf,
+  part,
+  track,
+  measureIndex,
+  stave,
+  context,
+  laneAnchorMidi,
+  options,
+  pitchState,
+  defaultStemDirection,
+) {
   const measure = part.measures[measureIndex];
   const clusters = measureClusters(track, measureIndex);
   const tickables = [];
@@ -282,21 +334,19 @@ function measurePlan(part, track, measureIndex, stave, context, anchorMidi, opti
     const gap = Math.max(0, cluster.onsetInMeasure - cursor);
     tickables.push(...makeGhosts(vf, gap));
 
-    // A rest has no pitch of its own. Place it at the last sounded pitch so the
-    // relative contour remains readable through silence. Before the first note,
-    // fall back to this system's anchor pitch.
-    const referenceMidi = pitchState.lastMidi ?? anchorMidi;
+    const referenceMidi = pitchState.lastMidi ?? pitchState.fallbackMidi ?? laneAnchorMidi;
     const { note, orderedNotes } = makeVexNote(
       vf,
       cluster,
       stave,
-      anchorMidi,
+      laneAnchorMidi,
       options.transpose,
       referenceMidi,
+      defaultStemDirection,
     );
     note.setContext(context);
     tickables.push(note);
-    noteItems.push({ cluster, note, orderedNotes, referenceMidi });
+    noteItems.push({ cluster, note, orderedNotes, referenceMidi, track });
 
     const representative = representativeNote(cluster);
     if (representative) {
@@ -308,23 +358,22 @@ function measurePlan(part, track, measureIndex, stave, context, anchorMidi, opti
 
   tickables.push(...makeGhosts(vf, Math.max(0, measure.duration - cursor)));
   if (!tickables.length) tickables.push(...makeGhosts(vf, measure.duration || 1));
-
   tickables.forEach((tickable) => tickable.setContext?.(context));
 
   const voice = new vf.Voice(`${measure.beats}/${measure.beatType}`);
   voice.setMode(vf.VoiceMode.SOFT);
   voice.addTickables(tickables);
-  new vf.Formatter().joinVoices([voice]).formatToStave([voice], stave, { context });
 
-  const beams = beamGroups(noteItems).map((group) => new vf.Beam(group.map((item) => item.note), false));
-  beams.forEach((beam) => beam.setContext(context));
-
-  return { measure, stave, voice, beams, noteItems };
+  return { track, measure, stave, voice, noteItems, beams: [] };
 }
 
-function systemGeometry(part, track, systemStart, systemEnd, top, semitoneSpacing, transpose) {
-  const events = track.events.filter((event) => event.measureIndex >= systemStart && event.measureIndex < systemEnd);
-  const notes = events.filter((event) => event.kind === "note" && event.pitch);
+function systemGeometry(lane, systemStart, systemEnd, top, semitoneSpacing, transpose) {
+  const events = lane.tracks.flatMap((track) => track.events.filter((event) =>
+    event.measureIndex >= systemStart && event.measureIndex < systemEnd,
+  ));
+  const notes = events
+    .filter((event) => event.kind === "note" && event.pitch)
+    .sort((a, b) => a.onset - b.onset || a.pitch.midi - b.pitch.midi);
   const anchor = notes[0] ?? null;
   const anchorMidi = anchor ? anchor.pitch.midi + transpose : 60 + transpose;
   const deltas = notes.map((event) => event.pitch.midi + transpose - anchorMidi);
@@ -332,7 +381,7 @@ function systemGeometry(part, track, systemStart, systemEnd, top, semitoneSpacin
   const maxDelta = deltas.length ? Math.max(...deltas) : 0;
   const span = maxDelta - minDelta;
   const pitchTop = top + 54;
-  const rowHeight = Math.max(118, 96 + span * semitoneSpacing);
+  const rowHeight = Math.max(124, 102 + span * semitoneSpacing);
   const anchorY = pitchTop + maxDelta * semitoneSpacing;
 
   return { anchor, anchorMidi, minDelta, maxDelta, span, pitchTop, anchorY, rowHeight };
@@ -387,15 +436,24 @@ function drawChordSpine(context, item) {
   }
 }
 
-function renderTrackSystem(context, part, track, systemStart, systemEnd, top, options) {
+function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, options) {
   const vf = requireVexFlow();
-  const geometry = systemGeometry(part, track, systemStart, systemEnd, top, options.semitoneSpacing, options.transpose);
-  const { anchor, anchorMidi, anchorY, rowHeight } = geometry;
+  const geometry = systemGeometry(lane, systemStart, systemEnd, top, options.semitoneSpacing, options.transpose);
+  const { anchorMidi, anchorY, rowHeight } = geometry;
   const rowBottom = top + rowHeight;
-  const plans = [];
-  const pitchState = { lastMidi: null };
+  const measureBundles = [];
+  const pitchStates = new Map();
 
-  drawText(context, `staff ${track.staff} · voice ${track.voice}`, 18, top + 17, {
+  for (const track of lane.tracks) {
+    const trackAnchor = firstPitchedEvent(track, systemStart, systemEnd);
+    pitchStates.set(track.key, {
+      lastMidi: null,
+      fallbackMidi: trackAnchor ? trackAnchor.pitch.midi + options.transpose : anchorMidi,
+    });
+  }
+
+  const voiceLabel = lane.tracks.map((track) => track.voice).join(", ");
+  drawText(context, `${lane.clef.label || lane.clef.sign} · voice${lane.tracks.length > 1 ? "s" : ""} ${voiceLabel}`, 18, top + 17, {
     size: 10,
     weight: "bold",
     fill: "#68717b",
@@ -422,57 +480,98 @@ function renderTrackSystem(context, part, track, systemStart, systemEnd, top, op
     stave.setContext(context);
     stave.setNoteStartX(x + 11);
 
-    plans.push(measurePlan(part, track, measureIndex, stave, context, anchorMidi, options, pitchState));
+    const plans = lane.tracks.map((track, trackIndex) => {
+      const defaultStemDirection = lane.tracks.length > 1
+        ? (trackIndex % 2 === 0 ? vf.Stem.UP : vf.Stem.DOWN)
+        : null;
+      return buildVoiceMeasurePlan(
+        vf,
+        part,
+        track,
+        measureIndex,
+        stave,
+        context,
+        anchorMidi,
+        options,
+        pitchStates.get(track.key),
+        defaultStemDirection,
+      );
+    });
+
+    const voices = plans.map((plan) => plan.voice);
+    const formatter = new vf.Formatter();
+    if (voices.length > 1) formatter.joinVoices(voices);
+    formatter.formatToStave(voices, stave, { context });
+
+    for (const plan of plans) {
+      plan.beams = beamGroups(plan.noteItems).map((group) => new vf.Beam(group.map((item) => item.note), false));
+      plan.beams.forEach((beam) => beam.setContext(context));
+    }
+
+    measureBundles.push({ stave, plans });
   }
 
   const endX = options.leftMargin + (systemEnd - systemStart) * options.measureWidth;
   drawLine(context, endX, top + 28, endX, rowBottom - 18, { stroke: "#d6dade", width: 1 });
 
-  const plotted = plans.flatMap((plan) => plan.noteItems.map((item) => plottedGeometry(item, options.transpose)));
-
-  // Chords are simultaneous vertical structures. The spine is split into
-  // separate gaps between adjacent noteheads so it never touches a head.
-  for (const item of plotted) drawChordSpine(context, item);
-
-  // Connect successive events without touching their glyphs. A semitone uses
-  // one connector; a whole tone uses two parallel connectors. Rests retain the
-  // previous sounded pitch, so the next pitched interval still comes from it.
-  for (let index = 1; index < plotted.length; index += 1) {
-    const previous = plotted[index - 1];
-    const current = plotted[index];
-    const segment = shortenSegment(previous.endX, previous.y, current.beginX, current.y);
-    if (!segment) continue;
-
-    if (current.isRest) {
-      drawRelativeConnector(context, segment, 0, false);
-      continue;
+  const plottedByTrack = new Map(lane.tracks.map((track) => [track.key, []]));
+  for (const bundle of measureBundles) {
+    for (const plan of bundle.plans) {
+      const plotted = plan.noteItems.map((item) => plottedGeometry(item, options.transpose));
+      plottedByTrack.get(plan.track.key).push(...plotted);
     }
-
-    const interval = current.pitchMidi - previous.pitchMidi;
-    drawRelativeConnector(context, segment, interval, true);
   }
 
-  for (const plan of plans) {
-    plan.voice.draw(context, plan.stave);
-    plan.beams.forEach((beam) => beam.draw());
+  for (const plotted of plottedByTrack.values()) {
+    for (const item of plotted) drawChordSpine(context, item);
+
+    for (let index = 1; index < plotted.length; index += 1) {
+      const previous = plotted[index - 1];
+      const current = plotted[index];
+      const segment = shortenSegment(previous.endX, previous.y, current.beginX, current.y);
+      if (!segment) continue;
+
+      if (current.isRest) {
+        drawIntervalConnector(context, segment, 0, false);
+      } else {
+        const interval = current.pitchMidi - previous.pitchMidi;
+        drawIntervalConnector(context, segment, interval, true);
+      }
+    }
   }
 
-  // Absolute pitch is a local anchor, not a margin label. Put it directly under
-  // the note it refers to so the same convention can later be used for phrase or
-  // section re-anchors anywhere in a line.
-  if (anchor) {
+  for (const bundle of measureBundles) {
+    for (const plan of bundle.plans) {
+      plan.voice.draw(context, bundle.stave);
+      plan.beams.forEach((beam) => beam.draw());
+    }
+  }
+
+  // Each independent voice gets its own local absolute-pitch anchor, even when
+  // several voices share the same clef lane. Duplicate labels at the exact same
+  // note position are collapsed.
+  const drawnAnchors = new Set();
+  for (const track of lane.tracks) {
+    const anchor = firstPitchedEvent(track, systemStart, systemEnd);
+    if (!anchor) continue;
+    const plotted = plottedByTrack.get(track.key) || [];
     const anchorItem = plotted.find((item) => !item.isRest && item.cluster.notes.includes(anchor));
-    if (anchorItem) {
-      const anchorIndex = Math.max(0, anchorItem.orderedNotes.indexOf(anchor));
-      const anchorNoteY = anchorItem.ys[anchorIndex] ?? anchorItem.y;
-      const anchorLabel = options.transpose === 0 ? anchor.pitch.label : midiToPitchLabel(anchorMidi);
-      drawText(context, anchorLabel, anchorItem.centerX, anchorNoteY + 17, {
-        size: 9,
-        weight: "bold",
-        align: "center",
-        fill: "#59616a",
-      });
-    }
+    if (!anchorItem) continue;
+
+    const anchorIndex = Math.max(0, anchorItem.orderedNotes.indexOf(anchor));
+    const anchorNoteY = anchorItem.ys[anchorIndex] ?? anchorItem.y;
+    const anchorMidiForTrack = anchor.pitch.midi + options.transpose;
+    const anchorLabel = options.transpose === 0 ? anchor.pitch.label : midiToPitchLabel(anchorMidiForTrack);
+    const dedupeKey = `${Math.round(anchorItem.centerX)}:${Math.round(anchorNoteY)}:${anchorLabel}`;
+    if (drawnAnchors.has(dedupeKey)) continue;
+    drawnAnchors.add(dedupeKey);
+
+    drawText(context, anchorLabel, anchorItem.centerX, anchorNoteY + 17, {
+      size: 9,
+      weight: "bold",
+      align: "center",
+      fill: "#59616a",
+    });
   }
 
   return rowHeight;
@@ -486,12 +585,22 @@ function calculateLayout(score, options) {
     top += 32;
     for (let systemStart = 0; systemStart < part.measures.length; systemStart += options.measuresPerSystem) {
       const systemEnd = Math.min(part.measures.length, systemStart + options.measuresPerSystem);
+      const lanes = buildClefLanes(part, systemStart, systemEnd);
       let systemHeight = 0;
-      for (const track of part.tracks) {
-        const geometry = systemGeometry(part, track, systemStart, systemEnd, top + systemHeight, options.semitoneSpacing, options.transpose);
-        rows.push({ part, track, systemStart, systemEnd, top: top + systemHeight, rowHeight: geometry.rowHeight });
+
+      for (const lane of lanes) {
+        const geometry = systemGeometry(
+          lane,
+          systemStart,
+          systemEnd,
+          top + systemHeight,
+          options.semitoneSpacing,
+          options.transpose,
+        );
+        rows.push({ part, lane, systemStart, systemEnd, top: top + systemHeight, rowHeight: geometry.rowHeight });
         systemHeight += geometry.rowHeight + 12;
       }
+
       top += systemHeight + 24;
     }
     top += 12;
@@ -528,7 +637,7 @@ export function renderRelativeScore(score, userOptions = {}) {
       drawText(context, row.part.name, 18, row.top - 12, { size: 12, weight: "bold", fill: "#3f464e" });
       previousPart = row.part;
     }
-    renderTrackSystem(context, row.part, row.track, row.systemStart, row.systemEnd, row.top, options);
+    renderClefLaneSystem(context, row.part, row.lane, row.systemStart, row.systemEnd, row.top, options);
   }
 
   const svg = host.querySelector("svg");
@@ -537,5 +646,6 @@ export function renderRelativeScore(score, userOptions = {}) {
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", `${score.metadata.title || "Score"} in relative chromatic notation`);
   svg.dataset.renderer = "VexFlow 5";
+  svg.dataset.clefLanes = String(layout.rows.length);
   return svg;
 }
