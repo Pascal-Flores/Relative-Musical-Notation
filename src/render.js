@@ -158,11 +158,15 @@ function beamGroups(items) {
 }
 
 function drawText(context, text, x, y, options = {}) {
+  const value = String(text);
   context.save();
   context.setFont(options.family || "Arial", options.size || 11, options.weight || "normal");
   context.setFillStyle(options.fill || "#252a31");
-  context.setTextAlign(options.align || "left");
-  context.fillText(String(text), x, y);
+  const width = context.measureText(value).width;
+  let drawX = x;
+  if (options.align === "right") drawX -= width;
+  else if (options.align === "center") drawX -= width / 2;
+  context.fillText(value, drawX, y);
   context.restore();
 }
 
@@ -181,12 +185,12 @@ function drawIntervalLabel(context, x, y, interval) {
   const text = String(Math.abs(interval));
   context.save();
   context.setFont("Arial", 9, "bold");
+  const textWidth = context.measureText(text).width;
+  const width = Math.max(15, textWidth + 8);
   context.setFillStyle("#ffffff");
-  const width = Math.max(15, context.measureText(text).width + 8);
   context.fillRect(x - width / 2, y - 10, width, 14);
   context.setFillStyle("#59616a");
-  context.setTextAlign("center");
-  context.fillText(text, x, y + 1);
+  context.fillText(text, x - textWidth / 2, y + 1);
   context.restore();
 }
 
@@ -218,12 +222,12 @@ function measurePlan(part, track, measureIndex, stave, context, anchorMidi, opti
 
   tickables.forEach((tickable) => tickable.setContext?.(context));
 
-  const voice = new vf.Voice({ time: `${measure.beats}/${measure.beatType}` });
+  const voice = new vf.Voice(`${measure.beats}/${measure.beatType}`);
   voice.setMode(vf.VoiceMode.SOFT);
   voice.addTickables(tickables);
   new vf.Formatter().joinVoices([voice]).formatToStave([voice], stave, { context });
 
-  const beams = beamGroups(noteItems).map((group) => new vf.Beam(group.map((item) => item.note), { autoStem: false }));
+  const beams = beamGroups(noteItems).map((group) => new vf.Beam(group.map((item) => item.note), false));
   beams.forEach((beam) => beam.setContext(context));
 
   return { measure, stave, voice, beams, noteItems };
