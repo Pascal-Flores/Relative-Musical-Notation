@@ -1,7 +1,11 @@
 import { extractMusicXMLFromMXL } from "./mxl.js";
 import { parseMusicXML } from "./musicxml.js";
 import { renderRelativeScore } from "./render-score.js";
-import { createPagedPreview, downloadRelativeScorePdf } from "./pdf-export.js";
+import {
+  createPagedPreview,
+  downloadRelativeScorePdf,
+  downloadRelativeScoreSvg,
+} from "./pdf-export.js";
 
 const fileInput = document.querySelector("#fileInput");
 const loadSampleButton = document.querySelector("#loadSample");
@@ -162,7 +166,7 @@ downloadPdfButton.addEventListener("click", async () => {
 
   downloadPdfButton.disabled = true;
   try {
-    setStatus(`Generating ${currentPageCount || "paginated"} A4 PDF page${currentPageCount === 1 ? "" : "s"}…`);
+    setStatus(`Generating ${currentPageCount || "paginated"} A4 PDF page${currentPageCount === 1 ? "" : "s"} with embedded notation glyphs…`);
     const pageCount = await downloadRelativeScorePdf(currentSvg, `${baseName()}-relative.pdf`);
     setStatus(`PDF generated: ${pageCount} A4 page${pageCount === 1 ? "" : "s"}.`);
   } catch (error) {
@@ -173,19 +177,20 @@ downloadPdfButton.addEventListener("click", async () => {
   }
 });
 
-downloadSvgButton.addEventListener("click", () => {
+downloadSvgButton.addEventListener("click", async () => {
   if (!currentSvg) return;
 
-  const serializer = new XMLSerializer();
-  const source = `<?xml version="1.0" encoding="UTF-8"?>\n${serializer.serializeToString(currentSvg)}`;
-  const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-
-  link.href = url;
-  link.download = `${baseName()}-relative.svg`;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadSvgButton.disabled = true;
+  try {
+    setStatus("Generating self-contained SVG with embedded notation fonts…");
+    await downloadRelativeScoreSvg(currentSvg, `${baseName()}-relative.svg`);
+    setStatus("SVG generated with embedded notation fonts.");
+  } catch (error) {
+    console.error(error);
+    setStatus(error instanceof Error ? error.message : String(error), true);
+  } finally {
+    downloadSvgButton.disabled = false;
+  }
 });
 
 updateControlLabels();
