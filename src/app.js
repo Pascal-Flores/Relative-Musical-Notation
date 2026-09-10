@@ -40,11 +40,15 @@ function updateMetadata() {
   }
 
   const trackCount = score.parts.reduce((total, part) => total + part.tracks.length, 0);
+  const clefCount = new Set(
+    score.parts.flatMap((part) => part.tracks.map((track) => track.clef?.key).filter(Boolean)),
+  ).size;
   const items = [
     score.metadata.title,
     score.metadata.composer || null,
     `${score.parts.length} part${score.parts.length === 1 ? "" : "s"}`,
     `${trackCount} voice track${trackCount === 1 ? "" : "s"}`,
+    `${clefCount || 1} clef lane${clefCount === 1 ? "" : "s"}`,
     `${score.measureCount} measure${score.measureCount === 1 ? "" : "s"}`,
     "VexFlow 5 engraving",
   ].filter(Boolean);
@@ -65,7 +69,7 @@ function render() {
     currentSvg = renderRelativeScore(score, settings());
     renderHost.replaceChildren(currentSvg);
     downloadSvgButton.disabled = false;
-    setStatus(`Rendered ${sourceName}. 1–2 semitone intervals use tick marks; larger intervals use unsigned numbers.`);
+    setStatus(`Rendered ${sourceName}. Voices sharing a MusicXML clef are displayed together; treble/bass remain separate.`);
   } catch (error) {
     console.error(error);
     setStatus(error instanceof Error ? error.message : String(error), true);
