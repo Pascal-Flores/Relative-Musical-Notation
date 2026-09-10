@@ -1,9 +1,11 @@
 import { extractMusicXMLFromMXL } from "./mxl.js";
 import { parseMusicXML } from "./musicxml.js";
 import { renderRelativeScore } from "./render-score.js";
+import { createPagedPreview, downloadRelativeScorePdf } from "./pdf-export.js";
 
 const fileInput = document.querySelector("#fileInput");
 const loadSampleButton = document.querySelector("#loadSample");
+const downloadPdfButton = document.querySelector("#downloadPdf");
 const downloadSvgButton = document.querySelector("#downloadSvg");
 const measuresPerSystemInput = document.querySelector("#measuresPerSystem");
 const semitoneSpacingInput = document.querySelector("#semitoneSpacing");
@@ -16,6 +18,7 @@ const renderHost = document.querySelector("#renderHost");
 let score = null;
 let sourceName = "score";
 let currentSvg = null;
+let currentPageCount = 0;
 
 function setStatus(message, isError = false) {
   status.textContent = message;
@@ -28,6 +31,10 @@ function settings() {
     semitoneSpacing: Number(semitoneSpacingInput.value),
     transpose: Number(transposeInput.value),
   };
+}
+
+function baseName() {
+  return sourceName.replace(/\.(musicxml|mxl|xml)$/i, "").replace(/[^a-z0-9_-]+/gi, "-") || "score";
 }
 
 function updateControlLabels() {
@@ -51,6 +58,7 @@ function updateMetadata() {
     `${trackCount} voice track${trackCount === 1 ? "" : "s"}`,
     `${clefCount || 1} clef lane${clefCount === 1 ? "" : "s"}`,
     `${score.measureCount} measure${score.measureCount === 1 ? "" : "s"}`,
+    currentPageCount ? `${currentPageCount} A4 page${currentPageCount === 1 ? "" : "s"}` : null,
     "VexFlow 5 engraving",
   ].filter(Boolean);
 
@@ -68,9 +76,13 @@ function render() {
 
   try {
     currentSvg = renderRelativeScore(score, settings());
-    renderHost.replaceChildren(currentSvg);
+    const preview = createPagedPreview(currentSvg);
+    currentPageCount = preview.pageCount;
+    renderHost.replaceChildren(preview.element);
+    downloadPdfButton.disabled = false;
     downloadSvgButton.disabled = false;
-    setStatus(`Rendered ${sourceName}. Parts covering the same measures are grouped together; voices still follow their MusicXML clef lanes.`);
+    updateMetadata();
+    setStatus(`Rendered ${sourceName} as ${currentPageCount} A4 page${currentPageCount === 1 ? "" : "s"}. System breaks are kept between pages whenever possible.`);
   } catch (error) {
     console.error(error);
     setStatus(error instanceof Error ? error.message : String(error), true);
@@ -81,12 +93,15 @@ function loadXml(xmlText, name) {
   try {
     score = parseMusicXML(xmlText);
     sourceName = name;
+    currentPageCount = 0;
     updateMetadata();
     render();
   } catch (error) {
     console.error(error);
     score = null;
     currentSvg = null;
+    currentPageCount = 0;
+    downloadPdfButton.disabled = true;
     downloadSvgButton.disabled = true;
     updateMetadata();
     setStatus(error instanceof Error ? error.message : String(error), true);
@@ -97,6 +112,8 @@ function clearFailedLoad(error) {
   console.error(error);
   score = null;
   currentSvg = null;
+  currentPageCount = 0;
+  downloadPdfButton.disabled = true;
   downloadSvgButton.disabled = true;
   updateMetadata();
   setStatus(error instanceof Error ? error.message : String(error), true);
@@ -140,6 +157,22 @@ for (const control of [measuresPerSystemInput, semitoneSpacingInput, transposeIn
   control.addEventListener("change", render);
 }
 
+downloadPdfButton.addEventListener("click", async () => {
+  if (!currentSvg) return;
+
+  downloadPdfButton.disabled = true;
+  try {
+    setStatus(`Generating ${currentPageCount || "paginated"} A4 PDF page${currentPageCount === 1 ? "" : "s"}…`);
+    const pageCount = await downloadRelativeScorePdf(currentSvg, `${baseName()}-relative.pdf`);
+    setStatus(`PDF generated: ${pageCount} A4 page${pageCount === 1 ? "" : "s"}.`);
+  } catch (error) {
+    console.error(error);
+    setStatus(error instanceof Error ? error.message : String(error), true);
+  } finally {
+    downloadPdfButton.disabled = false;
+  }
+});
+
 downloadSvgButton.addEventListener("click", () => {
   if (!currentSvg) return;
 
@@ -148,10 +181,9 @@ downloadSvgButton.addEventListener("click", () => {
   const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  const baseName = sourceName.replace(/\.(musicxml|mxl|xml)$/i, "").replace(/[^a-z0-9_-]+/gi, "-") || "score";
 
   link.href = url;
-  link.download = `${baseName}-relative.svg`;
+  link.download = `${baseName()}-relative.svg`;
   link.click();
   URL.revokeObjectURL(url);
 });
