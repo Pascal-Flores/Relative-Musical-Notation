@@ -6,29 +6,33 @@ The renderer takes a MusicXML file and produces an SVG score with these rules:
 
 - no horizontal staff lines;
 - one vertical step represents one semitone;
-- each rendered melodic line starts from an absolute pitch anchor (`C4`, `F#4`, ...) shown locally below its note;
-- successive musical events in a voice are connected by segments with a small visual gap around the note/rest glyphs;
-- the slope of a connector gives interval direction;
+- each independent voice starts from a local absolute pitch anchor (`C4`, `F#4`, ...) shown below its note;
+- successive musical events in a voice are connected by segments with a small visual gap around the glyphs;
 - a 1-semitone interval uses one connecting line;
 - a 2-semitone interval uses two parallel connecting lines;
 - intervals of 3 semitones and above use one connecting line plus an unsigned numeric magnitude (`3`, `4`, `5`, `6`, ...);
-- simultaneous chord pitches are joined by separated vertical spine segments that do not touch the noteheads;
+- simultaneous chord pitches are joined by separated vertical spine segments;
 - rests stay at the vertical level of the last sounded note, and the next interval is still measured from that last pitch;
+- MusicXML clef assignments are preserved as **display lanes**: voices on the same clef are rendered together, while treble/bass remain separate;
 - noteheads, stems, dots, flags, beams and rests keep their conventional rhythmic role;
 - barlines remain vertical measure separators;
 - transposition changes absolute anchors but leaves the melodic geometry unchanged.
 
 ## Engraving engine
 
-The first POC drew rhythmic notation directly in custom SVG. The current implementation instead uses **VexFlow 5** for rhythmic engraving and horizontal rhythmic spacing.
+The current implementation uses **VexFlow 5** for rhythmic engraving, horizontal rhythmic spacing and multi-voice formatting. Relative Musical Notation overrides only the pitch geometry.
 
-Relative Musical Notation only overrides the part that is intentionally different: **pitch geometry**. Each VexFlow note is placed on a hidden virtual stave whose vertical unit is remapped so that one semitone always has the same height. The virtual stave itself and ledger lines are never drawn.
+Each VexFlow note is placed on a hidden virtual stave whose vertical unit is remapped so that one semitone always has the same height. The virtual stave itself and ledger lines are never drawn.
 
-This keeps the experiment focused on the new notation instead of reimplementing a mature engraving engine's noteheads, stems, beams, dots and rests.
+## Clef / voice grouping
 
-OpenSheetMusicDisplay was considered as well, but it sits one level higher and is primarily a MusicXML-to-standard-score renderer built on VexFlow. Using VexFlow directly gives the POC access to individual note positions while preserving the engraving primitives we want to keep.
+The parser retains `<clef number="…">` information from MusicXML and attaches the active clef to each musical event.
 
-VexFlow is loaded from jsDelivr by `index.html`; no local build step is required for the POC.
+For each rendered system, tracks sharing the same clef are combined into one visible lane and formatted together by VexFlow. Equal pitches across those voices therefore align vertically. Different clefs remain separate lanes.
+
+The bundled piano sample contains one treble-clef voice and one bass-clef voice, so it renders as two lanes. A regression test changes the second staff to treble clef and verifies that both voices then render together in one lane.
+
+Clef changes occurring inside a rendered system are not yet split automatically; grouping currently uses the clef active at the start of that system.
 
 ## Run the prototype
 
@@ -38,7 +42,7 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000` and either load a MusicXML file or click **Load sample**.
 
-An internet connection is currently required when opening the page because VexFlow is loaded from the CDN.
+An internet connection is currently required when opening the page because VexFlow is loaded from jsDelivr.
 
 ## Current controls
 
@@ -48,14 +52,12 @@ An internet connection is currently required when opening the page because VexFl
 - chromatic transposition in semitones;
 - SVG download.
 
-The transposition control is a design test: because every line is relative to its first note, transposing the entire score should keep the exact same contour and only change the absolute starting-note labels.
-
 ## MusicXML coverage in this POC
 
 Supported well enough for experiments:
 
 - `score-partwise` MusicXML;
-- parts, measures, staves and voices;
+- parts, measures, staves, voices and clef assignments;
 - pitched notes and rests;
 - accidentals through `<alter>`;
 - durations, note types and augmentation dots;
@@ -66,6 +68,7 @@ Supported well enough for experiments:
 
 Not yet handled completely:
 
+- clef changes inside one rendered system;
 - tuplets and grace-note spacing;
 - ties, slurs and articulations;
 - dynamics, lyrics and ornaments;
@@ -75,16 +78,10 @@ Not yet handled completely:
 - automatic musical phrase detection;
 - sophisticated multi-voice collision avoidance.
 
-For now a **rendered system is also a re-anchoring point**. A later version can re-anchor from explicit phrase/section markers instead of, or in addition to, line breaks.
-
 ## Files
 
-- `src/musicxml.js`: small MusicXML parser into an internal score model;
-- `src/render.js`: adapter between the internal model, VexFlow rhythmic engraving and relative chromatic pitch placement;
+- `src/musicxml.js`: MusicXML parser into the internal score model, including clef assignments;
+- `src/render.js`: VexFlow adapter and relative chromatic renderer;
 - `src/app.js`: browser UI;
-- `samples/example.musicxml`: two-voice sample used by the demo;
+- `samples/example.musicxml`: two-clef piano sample;
 - `docs/NOTATION.md`: current notation rules and open design questions.
-
-## Status
-
-This is intentionally a visual and technical POC, not a complete MusicXML engraving engine. Its purpose is to determine whether relative chromatic contours remain readable on real music before formalising the notation further.
