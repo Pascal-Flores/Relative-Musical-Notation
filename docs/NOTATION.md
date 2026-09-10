@@ -36,24 +36,19 @@ Successive musical events in one voice are linked with straight segments based o
 
 The connector deliberately stops before each glyph. It therefore indicates the relationship between two events without visually touching or merging with the notehead or rest symbol.
 
-The segment itself encodes two things:
+The connector itself encodes direction through its slope. Direction is never repeated as a `+` or `-` sign.
 
-- its slope gives direction: rising or falling;
-- its vertical displacement gives chromatic interval size in semitones.
+### Interval notation
 
-Direction is never repeated as a `+` or `-` sign.
+Small intervals are encoded by the number of complete connector lines between the two notes:
 
-### Interval marks
+- 1 semitone: one connecting line;
+- 2 semitones: two parallel connecting lines;
+- 3 semitones and above: one connecting line plus an unsigned numeric magnitude (`3`, `4`, `5`, `6`, `7`, `12`, ...).
 
-Small intervals use tally-like marks rather than numbers:
+The two lines used for a whole tone run in parallel from the first event toward the second and retain the same visual gap around both glyphs.
 
-- 1 semitone: one short perpendicular mark across the connector;
-- 2 semitones: two short perpendicular marks across the connector;
-- 3 semitones and above: unsigned numeric magnitude (`3`, `4`, `5`, `6`, `7`, `12`, ...).
-
-The short marks are intentionally orientation-independent: the connector slope already says whether the motion rises or falls.
-
-A repeated pitch has a horizontal connector and no interval annotation.
+A repeated pitch has one horizontal connector and no interval annotation.
 
 ### Rests
 
@@ -110,7 +105,7 @@ Because the notation is relative inside each line:
 
 - interval magnitudes do not change;
 - melodic slopes do not change;
-- interval tick marks do not change;
+- connector multiplicity for 1- and 2-semitone intervals does not change;
 - vertical shape does not change;
 - rhythmic notation does not change;
 - only the absolute anchor labels change.
@@ -130,7 +125,7 @@ Connectors use VexFlow's own notehead coordinates (`getYs()`, `getNoteHeadBeginX
 The next useful experiments are:
 
 1. How often should an absolute anchor be repeated?
-2. Is one/two tally marks the clearest convention for semitone and whole-tone motion at different print sizes?
+2. Is the one-line / two-line distinction for semitone and whole-tone motion clear enough at different print sizes?
 3. Which note of a polyphonic chord should carry the melodic continuation when MusicXML does not make that voice-leading explicit?
 4. How should independent simultaneous voices be distinguished without relying on colour?
 5. Should very large leaps be compressed visually or always remain metrically exact?
