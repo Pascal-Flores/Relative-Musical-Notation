@@ -61,7 +61,11 @@ Because there is little vertical room for numeric labels inside a chord, chord i
 - 5 semitones: 5 parallel vertical lines;
 - and so on.
 
-For example, a C–E–G major triad has 4 vertical lines between C and E, then 3 vertical lines between E and G. These lines stop short of the noteheads and are packed tightly around the chord's horizontal center.
+For example, a C–E–G major triad has 4 vertical lines between C and E, then 3 vertical lines between E and G.
+
+The spacing between adjacent chord-interval lines is fixed independently of the number of lines. The spacing is calibrated so that five lines span almost the full width of a notehead. Consequently, one, two, three or four lines remain centered but keep exactly the same inter-line spacing instead of being compressed or expanded to fill the available width.
+
+The vertical lines still stop short of the noteheads so the chord remains visually open.
 
 For the current POC, melodic connections entering or leaving a chord follow its highest pitch as the representative melodic note.
 
@@ -110,7 +114,7 @@ Connectors use VexFlow's own notehead coordinates (`getYs()`, `getNoteHeadBeginX
 
 1. How often should an absolute anchor be repeated?
 2. Is the one-line / two-line distinction for semitone and whole-tone melodic motion clear enough at different print sizes?
-3. How tightly can multiple vertical chord-interval lines be packed before they become hard to count?
+3. What should happen for unusually large gaps between adjacent chord tones if their line bundle would exceed a notehead's width?
 4. Which note of a polyphonic chord should carry the melodic continuation when MusicXML does not make that voice-leading explicit?
 5. How should more than two simultaneous voices sharing one clef be distinguished without relying on colour?
 6. Should clef changes inside a system force an automatic lane split or a new system?
