@@ -32,6 +32,8 @@ For each rendered system, tracks sharing the same clef are combined into one vis
 
 The bundled piano sample contains one treble-clef voice and one bass-clef voice, so it renders as two lanes. A regression test changes the second staff to treble clef and verifies that both voices then render together in one lane.
 
+Each merged voice keeps its own melodic connector chain, rests and local starting-pitch anchor. If MusicXML does not specify stem directions, simultaneous voices alternate up/down stems to make them easier to separate visually.
+
 Clef changes occurring inside a rendered system are not yet split automatically; grouping currently uses the clef active at the start of that system.
 
 ## Run the prototype
