@@ -27,3 +27,6 @@ jobs:
 
       - name: Render MusicXML and test MXL extraction
         run: node scripts/smoke-render.mjs
+
+      - name: Test paged SVG export geometry and embedded fonts
+        run: node scripts/export-smoke.mjs
