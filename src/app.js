@@ -1,3 +1,4 @@
+import { extractMusicXMLFromMXL } from "./mxl.js";
 import { parseMusicXML } from "./musicxml.js";
 import { renderRelativeScore } from "./render.js";
 
@@ -92,10 +93,34 @@ function loadXml(xmlText, name) {
   }
 }
 
+function clearFailedLoad(error) {
+  console.error(error);
+  score = null;
+  currentSvg = null;
+  downloadSvgButton.disabled = true;
+  updateMetadata();
+  setStatus(error instanceof Error ? error.message : String(error), true);
+}
+
+function isCompressedMusicXML(file) {
+  return /\.mxl$/i.test(file.name) || file.type === "application/vnd.recordare.musicxml";
+}
+
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files?.[0];
   if (!file) return;
-  loadXml(await file.text(), file.name);
+
+  try {
+    if (isCompressedMusicXML(file)) {
+      setStatus(`Unpacking ${file.name}…`);
+      const { xmlText } = await extractMusicXMLFromMXL(await file.arrayBuffer());
+      loadXml(xmlText, file.name);
+    } else {
+      loadXml(await file.text(), file.name);
+    }
+  } catch (error) {
+    clearFailedLoad(error);
+  }
 });
 
 loadSampleButton.addEventListener("click", async () => {
@@ -123,7 +148,7 @@ downloadSvgButton.addEventListener("click", () => {
   const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  const baseName = sourceName.replace(/\.(musicxml|xml)$/i, "").replace(/[^a-z0-9_-]+/gi, "-") || "score";
+  const baseName = sourceName.replace(/\.(musicxml|mxl|xml)$/i, "").replace(/[^a-z0-9_-]+/gi, "-") || "score";
 
   link.href = url;
   link.download = `${baseName}-relative.svg`;
