@@ -1,6 +1,6 @@
 import { extractMusicXMLFromMXL } from "./mxl.js";
 import { parseMusicXML } from "./musicxml.js";
-import { renderRelativeScore } from "./render.js";
+import { renderRelativeScore } from "./render-score.js";
 
 const fileInput = document.querySelector("#fileInput");
 const loadSampleButton = document.querySelector("#loadSample");
@@ -70,7 +70,7 @@ function render() {
     currentSvg = renderRelativeScore(score, settings());
     renderHost.replaceChildren(currentSvg);
     downloadSvgButton.disabled = false;
-    setStatus(`Rendered ${sourceName}. Voices sharing a MusicXML clef are displayed together; treble/bass remain separate.`);
+    setStatus(`Rendered ${sourceName}. Parts covering the same measures are grouped together; voices still follow their MusicXML clef lanes.`);
   } catch (error) {
     console.error(error);
     setStatus(error instanceof Error ? error.message : String(error), true);
