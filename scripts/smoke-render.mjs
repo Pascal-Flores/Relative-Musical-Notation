@@ -44,6 +44,14 @@ if (svg.dataset.anchorPolicy !== "phrase-aware-continuation") {
   throw new Error(`Unexpected anchor policy: ${svg.dataset.anchorPolicy || "missing"}.`);
 }
 
+if (svg.dataset.chordAnchorPolicy !== "representative-highest") {
+  throw new Error(`Unexpected chord anchor policy: ${svg.dataset.chordAnchorPolicy || "missing"}.`);
+}
+
+if (svg.dataset.continuationPolicy !== "directional-half-interval") {
+  throw new Error(`Unexpected continuation policy: ${svg.dataset.continuationPolicy || "missing"}.`);
+}
+
 const noteGlyphs = svg.querySelectorAll("path").length;
 if (noteGlyphs === 0) {
   throw new Error("The SVG contains no path glyphs; rhythmic engraving did not render.");
@@ -76,6 +84,71 @@ if (multiOutput.includes("treble · voice") || multiOutput.includes("bass · voi
 const c4AnchorCount = (multiOutput.match(/>C4<\/text>/g) || []).length;
 if (c4AnchorCount !== 1) {
   throw new Error(`Expected one C4 absolute anchor across a continuous two-system phrase, got ${c4AnchorCount}.`);
+}
+
+// If a phrase starts on a chord, its absolute anchor must be attached to the
+// same representative tone used by the melodic contour: currently the highest
+// chord tone, not the root/first MusicXML note by accident.
+const chordAnchorScore = parseMusicXML(source);
+const trebleTrack = chordAnchorScore.parts[0].tracks.find((track) => track.staff === "1" && track.voice === "1");
+const firstTrebleNote = trebleTrack?.events.find((event) => event.kind === "note" && event.pitch);
+if (!trebleTrack || !firstTrebleNote) throw new Error("Unable to build chord-anchor regression score.");
+const addedChordTone = structuredClone(firstTrebleNote);
+addedChordTone.pitch = { step: "G", alter: 0, octave: 4, midi: 67, label: "G4" };
+addedChordTone.chord = true;
+trebleTrack.events.push(addedChordTone);
+trebleTrack.events.sort((a, b) => a.onset - b.onset || Number(a.chord) - Number(b.chord));
+
+const chordAnchorSvg = renderRelativeScore(chordAnchorScore, {
+  measuresPerSystem: 4,
+  semitoneSpacing: 8,
+  transpose: 0,
+});
+const chordAnchorOutput = serializer.serializeToString(chordAnchorSvg);
+if (!chordAnchorOutput.includes(">G4</text>")) {
+  throw new Error("A phrase-start chord should anchor its highest representative tone (G4 in this regression score).");
+}
+if (chordAnchorOutput.includes(">C4</text>")) {
+  throw new Error("A phrase-start chord should not anchor the lower root when the melodic contour uses its highest tone.");
+}
+
+// The outgoing segment at a graphical line break must already point toward the
+// next pitch. For this C4 -> G4 test, the right-edge continuation must slope up
+// (SVG y decreases), rather than remaining horizontal.
+const directionalSource = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Test</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <time><beats>1</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>
+    </measure>
+  </part>
+</score-partwise>`;
+const directionalScore = parseMusicXML(directionalSource);
+const directionalSvg = renderRelativeScore(directionalScore, {
+  measuresPerSystem: 1,
+  semitoneSpacing: 8,
+  transpose: 0,
+});
+const rightEdgeSegments = Array.from(directionalSvg.querySelectorAll("path"))
+  .map((path) => path.getAttribute("d") || "")
+  .map((d) => ({ d, match: d.match(/^M(-?[0-9.]+) (-?[0-9.]+)L243 (-?[0-9.]+)$/) }))
+  .filter(({ match }) => Boolean(match));
+
+if (rightEdgeSegments.length === 0) {
+  throw new Error("Expected a continuation segment reaching the first system's right edge.");
+}
+const [, , continuationStartY, continuationEndY] = rightEdgeSegments[0].match;
+if (!(Number(continuationEndY) < Number(continuationStartY) - 1)) {
+  throw new Error(`Expected C4 -> G4 line-break continuation to slope upward, got ${rightEdgeSegments[0].d}.`);
 }
 
 // Regression test for multi-voice display: if both piano staves use the same
@@ -121,5 +194,5 @@ if (mxlScore.metadata.title !== score.metadata.title || mxlScore.measureCount !=
 }
 
 console.log(
-  `VexFlow smoke render OK: ${output.length} SVG characters, ${noteGlyphs} path elements; simultaneous grouping, phrase continuity, clef grouping 2→1 and MXL extraction verified.`,
+  `VexFlow smoke render OK: ${output.length} SVG characters, ${noteGlyphs} path elements; chord anchors, directional continuations, simultaneous grouping, phrase continuity, clef grouping 2→1 and MXL extraction verified.`,
 );
