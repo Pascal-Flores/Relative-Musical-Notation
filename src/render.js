@@ -2,7 +2,8 @@ import { midiToPitchLabel } from "./musicxml.js";
 
 const ANCHOR_LINE = 2.5;
 const CONNECTOR_GAP = 6;
-const CHORD_GAP = 5;
+const CHORD_GAP = 4;
+const CHORD_PARALLEL_SPACING = 1.8;
 const PARALLEL_CONNECTOR_OFFSET = 2.4;
 const DEFAULT_CLEF = { sign: "G", line: 2, octaveChange: 0, key: "G:2:0", label: "treble" };
 
@@ -421,18 +422,36 @@ function plottedGeometry(item, transpose) {
   };
 }
 
-function drawChordSpine(context, item) {
-  if (item.isRest || item.ys.length < 2) return;
+function centeredOffsets(count, spacing) {
+  return Array.from({ length: count }, (_, index) => (index - (count - 1) / 2) * spacing);
+}
 
-  const ys = [...item.ys].sort((a, b) => a - b);
-  for (let index = 1; index < ys.length; index += 1) {
-    const startY = ys[index - 1] + CHORD_GAP;
-    const endY = ys[index] - CHORD_GAP;
+function drawChordSpine(context, item) {
+  if (item.isRest || item.ys.length < 2 || item.orderedNotes.length < 2) return;
+
+  const tones = item.orderedNotes
+    .map((event, index) => ({ event, y: item.ys[index] }))
+    .filter((tone) => Number.isFinite(tone.y))
+    .sort((a, b) => a.event.pitch.midi - b.event.pitch.midi);
+
+  for (let index = 1; index < tones.length; index += 1) {
+    const previous = tones[index - 1];
+    const current = tones[index];
+    const semitoneGap = Math.max(1, Math.round(Math.abs(current.event.pitch.midi - previous.event.pitch.midi)));
+    const topY = Math.min(previous.y, current.y);
+    const bottomY = Math.max(previous.y, current.y);
+    const distance = bottomY - topY;
+    const endpointGap = Math.min(CHORD_GAP, Math.max(0.8, distance * 0.28));
+    const startY = topY + endpointGap;
+    const endY = bottomY - endpointGap;
     if (endY <= startY) continue;
-    drawLine(context, item.centerX, startY, item.centerX, endY, {
-      stroke: "#727a84",
-      width: 1.4,
-    });
+
+    for (const offset of centeredOffsets(semitoneGap, CHORD_PARALLEL_SPACING)) {
+      drawLine(context, item.centerX + offset, startY, item.centerX + offset, endY, {
+        stroke: "#727a84",
+        width: 1,
+      });
+    }
   }
 }
 
@@ -547,9 +566,6 @@ function renderClefLaneSystem(context, part, lane, systemStart, systemEnd, top, 
     }
   }
 
-  // Each independent voice gets its own local absolute-pitch anchor, even when
-  // several voices share the same clef lane. Duplicate labels at the exact same
-  // note position are collapsed.
   const drawnAnchors = new Set();
   for (const track of lane.tracks) {
     const anchor = firstPitchedEvent(track, systemStart, systemEnd);
@@ -647,5 +663,6 @@ export function renderRelativeScore(score, userOptions = {}) {
   svg.setAttribute("aria-label", `${score.metadata.title || "Score"} in relative chromatic notation`);
   svg.dataset.renderer = "VexFlow 5";
   svg.dataset.clefLanes = String(layout.rows.length);
+  svg.dataset.chordEncoding = "parallel-lines-per-semitone";
   return svg;
 }
