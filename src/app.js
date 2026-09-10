@@ -7,8 +7,9 @@ const downloadSvgButton = document.querySelector("#downloadSvg");
 const measuresPerSystemInput = document.querySelector("#measuresPerSystem");
 const semitoneSpacingInput = document.querySelector("#semitoneSpacing");
 const semitoneSpacingValue = document.querySelector("#semitoneSpacingValue");
+const minIntervalLabelInput = document.querySelector("#minIntervalLabel");
+const minIntervalLabelValue = document.querySelector("#minIntervalLabelValue");
 const transposeInput = document.querySelector("#transpose");
-const showIntervalsInput = document.querySelector("#showIntervals");
 const status = document.querySelector("#status");
 const scoreMeta = document.querySelector("#scoreMeta");
 const renderHost = document.querySelector("#renderHost");
@@ -26,9 +27,14 @@ function settings() {
   return {
     measuresPerSystem: Number(measuresPerSystemInput.value),
     semitoneSpacing: Number(semitoneSpacingInput.value),
+    minIntervalLabel: Number(minIntervalLabelInput.value),
     transpose: Number(transposeInput.value),
-    showIntervals: showIntervalsInput.checked,
   };
+}
+
+function updateControlLabels() {
+  semitoneSpacingValue.value = `${semitoneSpacingInput.value} px`;
+  minIntervalLabelValue.value = `${minIntervalLabelInput.value} semitone${minIntervalLabelInput.value === "1" ? "" : "s"}`;
 }
 
 function updateMetadata() {
@@ -44,6 +50,7 @@ function updateMetadata() {
     `${score.parts.length} part${score.parts.length === 1 ? "" : "s"}`,
     `${trackCount} voice track${trackCount === 1 ? "" : "s"}`,
     `${score.measureCount} measure${score.measureCount === 1 ? "" : "s"}`,
+    "VexFlow 5 engraving",
   ].filter(Boolean);
 
   scoreMeta.replaceChildren(...items.map((item) => {
@@ -55,14 +62,14 @@ function updateMetadata() {
 }
 
 function render() {
-  semitoneSpacingValue.value = `${semitoneSpacingInput.value} px`;
+  updateControlLabels();
   if (!score) return;
 
   try {
     currentSvg = renderRelativeScore(score, settings());
     renderHost.replaceChildren(currentSvg);
     downloadSvgButton.disabled = false;
-    setStatus(`Rendered ${sourceName}. Each displayed line is re-anchored on its first pitched note.`);
+    setStatus(`Rendered ${sourceName}. Direction is carried by the segment slope; labels show unsigned interval size only.`);
   } catch (error) {
     console.error(error);
     setStatus(error instanceof Error ? error.message : String(error), true);
@@ -103,7 +110,7 @@ loadSampleButton.addEventListener("click", async () => {
   }
 });
 
-for (const control of [measuresPerSystemInput, semitoneSpacingInput, transposeInput, showIntervalsInput]) {
+for (const control of [measuresPerSystemInput, semitoneSpacingInput, minIntervalLabelInput, transposeInput]) {
   control.addEventListener("input", render);
   control.addEventListener("change", render);
 }
@@ -124,4 +131,4 @@ downloadSvgButton.addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
-semitoneSpacingValue.value = `${semitoneSpacingInput.value} px`;
+updateControlLabels();
