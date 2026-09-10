@@ -92,17 +92,18 @@ function makeDummyKeys(count) {
   return Array.from({ length: Math.max(1, count) }, (_, index) => keys[index % keys.length]);
 }
 
-function makeVexNote(vf, cluster, stave, anchorMidi, transpose) {
+function makeVexNote(vf, cluster, stave, anchorMidi, transpose, referenceMidi) {
   const isRest = cluster.notes.length === 0;
-  const notes = isRest ? [] : [...cluster.notes].sort((a, b) => a.pitch.midi - b.pitch.midi);
+  const orderedNotes = isRest ? [] : [...cluster.notes].sort((a, b) => a.pitch.midi - b.pitch.midi);
   const duration = toVexDuration(clusterType(cluster), clusterDots(cluster), isRest);
-  const keys = isRest ? ["b/4"] : makeDummyKeys(notes.length);
+  const keys = isRest ? ["b/4"] : makeDummyKeys(orderedNotes.length);
   const note = new vf.StaveNote({ keys, duration });
 
   if (isRest) {
-    note.setKeyLine(0, ANCHOR_LINE);
+    const delta = referenceMidi - anchorMidi;
+    note.setKeyLine(0, ANCHOR_LINE + delta * 0.5);
   } else {
-    notes.forEach((event, index) => {
+    orderedNotes.forEach((event, index) => {
       const delta = event.pitch.midi + transpose - anchorMidi;
       note.setKeyLine(index, ANCHOR_LINE + delta * 0.5);
     });
@@ -119,7 +120,7 @@ function makeVexNote(vf, cluster, stave, anchorMidi, transpose) {
     vf.Dot.buildAndAttach([note], { all: true });
   }
 
-  return note;
+  return { note, orderedNotes };
 }
 
 function beamGroups(items) {
@@ -198,7 +199,7 @@ function measureClusters(track, measureIndex) {
   return groupByOnset(track.events.filter((event) => event.measureIndex === measureIndex));
 }
 
-function measurePlan(part, track, measureIndex, stave, context, anchorMidi, options) {
+function measurePlan(part, track, measureIndex, stave, context, anchorMidi, options, pitchState) {
   const vf = requireVexFlow();
   const measure = part.measures[measureIndex];
   const clusters = measureClusters(track, measureIndex);
@@ -210,10 +211,27 @@ function measurePlan(part, track, measureIndex, stave, context, anchorMidi, opti
     const gap = Math.max(0, cluster.onsetInMeasure - cursor);
     tickables.push(...makeGhosts(vf, gap));
 
-    const note = makeVexNote(vf, cluster, stave, anchorMidi, options.transpose);
+    // A rest has no pitch of its own. Place it at the last sounded pitch so the
+    // relative contour remains readable through silence. Before the first note,
+    // fall back to this system's anchor pitch.
+    const referenceMidi = pitchState.lastMidi ?? anchorMidi;
+    const { note, orderedNotes } = makeVexNote(
+      vf,
+      cluster,
+      stave,
+      anchorMidi,
+      options.transpose,
+      referenceMidi,
+    );
     note.setContext(context);
     tickables.push(note);
-    noteItems.push({ cluster, note });
+    noteItems.push({ cluster, note, orderedNotes, referenceMidi });
+
+    const representative = representativeNote(cluster);
+    if (representative) {
+      pitchState.lastMidi = representative.pitch.midi + options.transpose;
+    }
+
     cursor = Math.max(cursor, cluster.onsetInMeasure + clusterDuration(cluster));
   }
 
@@ -249,32 +267,53 @@ function systemGeometry(part, track, systemStart, systemEnd, top, semitoneSpacin
   return { anchor, anchorMidi, minDelta, maxDelta, span, pitchTop, anchorY, rowHeight };
 }
 
+function plottedGeometry(item, transpose) {
+  const ys = item.note.getYs();
+  const beginX = item.note.getNoteHeadBeginX();
+  const endX = item.note.getNoteHeadEndX();
+  const centerX = (beginX + endX) / 2;
+
+  if (!item.cluster.notes.length) {
+    return {
+      ...item,
+      isRest: true,
+      pitchMidi: item.referenceMidi,
+      y: ys[0],
+      ys,
+      beginX,
+      endX,
+      centerX,
+    };
+  }
+
+  const representative = representativeNote(item.cluster);
+  const representativeIndex = Math.max(0, item.orderedNotes.indexOf(representative));
+  return {
+    ...item,
+    representative,
+    isRest: false,
+    pitchMidi: representative.pitch.midi + transpose,
+    y: ys[representativeIndex] ?? ys.at(-1),
+    ys,
+    beginX,
+    endX,
+    centerX,
+  };
+}
+
 function renderTrackSystem(context, part, track, systemStart, systemEnd, top, options) {
   const vf = requireVexFlow();
   const geometry = systemGeometry(part, track, systemStart, systemEnd, top, options.semitoneSpacing, options.transpose);
   const { anchor, anchorMidi, anchorY, rowHeight } = geometry;
   const rowBottom = top + rowHeight;
   const plans = [];
+  const pitchState = { lastMidi: null };
 
   drawText(context, `staff ${track.staff} · voice ${track.voice}`, 18, top + 17, {
     size: 10,
     weight: "bold",
     fill: "#68717b",
   });
-
-  if (anchor) {
-    drawText(context, midiToPitchLabel(anchorMidi), options.leftMargin - 14, anchorY + 4, {
-      size: 13,
-      weight: "bold",
-      align: "right",
-      fill: "#17191d",
-    });
-    drawText(context, "start", options.leftMargin - 14, anchorY - 11, {
-      size: 9,
-      align: "right",
-      fill: "#90969e",
-    });
-  }
 
   for (let measureIndex = systemStart; measureIndex < systemEnd; measureIndex += 1) {
     const localIndex = measureIndex - systemStart;
@@ -297,44 +336,69 @@ function renderTrackSystem(context, part, track, systemStart, systemEnd, top, op
     stave.setContext(context);
     stave.setNoteStartX(x + 11);
 
-    plans.push(measurePlan(part, track, measureIndex, stave, context, anchorMidi, options));
+    plans.push(measurePlan(part, track, measureIndex, stave, context, anchorMidi, options, pitchState));
   }
 
   const endX = options.leftMargin + (systemEnd - systemStart) * options.measureWidth;
   drawLine(context, endX, top + 28, endX, rowBottom - 18, { stroke: "#d6dade", width: 1 });
 
-  const plotted = [];
-  for (const plan of plans) {
-    for (const item of plan.noteItems) {
-      const rep = representativeNote(item.cluster);
-      plotted.push({
-        ...item,
-        representative: rep,
-        x: item.note.getAbsoluteX() + item.note.getXShift(),
-        y: rep ? anchorY - (rep.pitch.midi + options.transpose - anchorMidi) * options.semitoneSpacing : anchorY,
-      });
-    }
+  const plotted = plans.flatMap((plan) => plan.noteItems.map((item) => plottedGeometry(item, options.transpose)));
+
+  // Chords are simultaneous vertical pitch structures. Draw their interval spine
+  // behind the noteheads rather than treating them as a single floating point.
+  for (const item of plotted) {
+    if (item.isRest || item.ys.length < 2) continue;
+    drawLine(context, item.centerX, Math.min(...item.ys), item.centerX, Math.max(...item.ys), {
+      stroke: "#727a84",
+      width: 1.4,
+    });
   }
 
-  let previous = null;
-  for (const item of plotted) {
-    if (!item.representative) {
-      previous = null;
-      continue;
-    }
-    if (previous?.representative) {
-      drawLine(context, previous.x + 6, previous.y, item.x - 6, item.y, { stroke: "#727a84", width: 1.4 });
-      const interval = item.representative.pitch.midi - previous.representative.pitch.midi;
+  // Connect the actual VexFlow notehead / rest glyph edges. Rests retain the
+  // previous sounded pitch, so the contour stays horizontal through silence and
+  // the next leap is still measured from the last played note.
+  for (let index = 1; index < plotted.length; index += 1) {
+    const previous = plotted[index - 1];
+    const current = plotted[index];
+    drawLine(context, previous.endX, previous.y, current.beginX, current.y, {
+      stroke: "#727a84",
+      width: 1.4,
+    });
+
+    if (!current.isRest) {
+      const interval = current.pitchMidi - previous.pitchMidi;
       if (Math.abs(interval) >= options.minIntervalLabel) {
-        drawIntervalLabel(context, (previous.x + item.x) / 2, (previous.y + item.y) / 2, interval);
+        drawIntervalLabel(
+          context,
+          (previous.endX + current.beginX) / 2,
+          (previous.y + current.y) / 2,
+          interval,
+        );
       }
     }
-    previous = item;
   }
 
   for (const plan of plans) {
     plan.voice.draw(context, plan.stave);
     plan.beams.forEach((beam) => beam.draw());
+  }
+
+  // Absolute pitch is a local anchor, not a margin label. Put it directly under
+  // the note it refers to so the same convention can later be used for phrase or
+  // section re-anchors anywhere in a line.
+  if (anchor) {
+    const anchorItem = plotted.find((item) => !item.isRest && item.cluster.notes.includes(anchor));
+    if (anchorItem) {
+      const anchorIndex = Math.max(0, anchorItem.orderedNotes.indexOf(anchor));
+      const anchorNoteY = anchorItem.ys[anchorIndex] ?? anchorItem.y;
+      const anchorLabel = options.transpose === 0 ? anchor.pitch.label : midiToPitchLabel(anchorMidi);
+      drawText(context, anchorLabel, anchorItem.centerX, anchorNoteY + 17, {
+        size: 9,
+        weight: "bold",
+        align: "center",
+        fill: "#59616a",
+      });
+    }
   }
 
   return rowHeight;
@@ -369,7 +433,7 @@ export function renderRelativeScore(score, userOptions = {}) {
     semitoneSpacing: Math.max(5, Math.min(14, Number(userOptions.semitoneSpacing) || 8)),
     transpose: Math.max(-48, Math.min(48, Number(userOptions.transpose) || 0)),
     minIntervalLabel: Math.max(1, Math.min(12, Number(userOptions.minIntervalLabel) || 3)),
-    leftMargin: 96,
+    leftMargin: 58,
     measureWidth: 190,
   };
 
