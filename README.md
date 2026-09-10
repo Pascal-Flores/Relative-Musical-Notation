@@ -6,10 +6,14 @@ The renderer takes a MusicXML file and produces an SVG score with these rules:
 
 - no horizontal staff lines;
 - one vertical step represents one semitone;
-- each rendered melodic line starts from an absolute pitch anchor (`C4`, `F#4`, ...);
-- successive notes in a voice are connected by segments;
-- the slope of a segment gives the interval direction, so interval labels are **unsigned magnitudes** (`3`, `5`, `12`, ...);
-- by default, intervals of 1 and 2 semitones are left unlabelled and are read directly from their geometry;
+- each rendered melodic line starts from an absolute pitch anchor (`C4`, `F#4`, ...) shown locally below its note;
+- successive musical events in a voice are connected by segments with a small visual gap around the note/rest glyphs;
+- the slope of a segment gives interval direction;
+- a 1-semitone interval is marked by one small perpendicular tick;
+- a 2-semitone interval is marked by two small perpendicular ticks;
+- intervals of 3 semitones and above use an unsigned numeric magnitude (`3`, `4`, `5`, `6`, ...);
+- simultaneous chord pitches are joined by separated vertical spine segments that do not touch the noteheads;
+- rests stay at the vertical level of the last sounded note, and the next interval is still measured from that last pitch;
 - noteheads, stems, dots, flags, beams and rests keep their conventional rhythmic role;
 - barlines remain vertical measure separators;
 - transposition changes absolute anchors but leaves the melodic geometry unchanged.
@@ -41,13 +45,10 @@ An internet connection is currently required when opening the page because VexFl
 - MusicXML file picker;
 - measures per rendered line;
 - semitone vertical spacing;
-- minimum interval size that receives a numeric label (default: `3`);
 - chromatic transposition in semitones;
 - SVG download.
 
-The interval threshold is deliberately exposed as a design experiment. At the default value, semitone and whole-tone motion has no number printed on the connector. Raising or lowering the threshold makes it easy to test how much annotation is actually useful.
-
-The transposition control is another design test: because every line is relative to its first note, transposing the entire score should keep the exact same contour and only change the absolute starting-note labels.
+The transposition control is a design test: because every line is relative to its first note, transposing the entire score should keep the exact same contour and only change the absolute starting-note labels.
 
 ## MusicXML coverage in this POC
 
