@@ -1,5 +1,7 @@
 import { renderRelativeScore as renderCore } from "./render.js";
 
+const CONTINUITY_STEP = 0.125;
+
 function clefOrder(clef) {
   if (clef?.sign === "G") return 0;
   if (clef?.sign === "C") return 1;
@@ -46,8 +48,45 @@ function namespaceClef(clef, partIndex) {
   };
 }
 
+function continuityEvents(events, mapEvent = (event) => event) {
+  let previousOriginalOnset = null;
+  let continuityOnset = 0;
+
+  return events.map((event) => {
+    if (previousOriginalOnset !== null && Math.abs(event.onset - previousOriginalOnset) > 1e-7) {
+      continuityOnset += CONTINUITY_STEP;
+    }
+    previousOriginalOnset = event.onset;
+
+    return {
+      ...mapEvent(event),
+      // Horizontal engraving uses onsetInMeasure. The core renderer currently
+      // reuses the absolute onset only for event ordering/chord grouping and a
+      // provisional silence-based phrase heuristic. Compressing that auxiliary
+      // timeline keeps ordering/chords intact but prevents ordinary rests from
+      // being mistaken for a new melodic phrase.
+      onset: continuityOnset,
+    };
+  });
+}
+
+function normalizeSinglePart(score) {
+  const part = score.parts[0];
+  return {
+    ...score,
+    parts: [{
+      ...part,
+      tracks: part.tracks.map((track) => ({
+        ...track,
+        events: continuityEvents(track.events),
+      })),
+    }],
+  };
+}
+
 export function groupScorePartsSimultaneously(score) {
-  if (!score?.parts?.length || score.parts.length === 1) return score;
+  if (!score?.parts?.length) return score;
+  if (score.parts.length === 1) return normalizeSinglePart(score);
 
   const tracks = [];
   const names = [];
@@ -67,7 +106,7 @@ export function groupScorePartsSimultaneously(score) {
         ...track,
         key: `part:${partIndex}/track:${trackIndex}/${track.key}`,
         clef: mapClef(track.clef),
-        events: track.events.map((event) => ({
+        events: continuityEvents(track.events, (event) => ({
           ...event,
           clef: mapClef(event.clef),
         })),
@@ -95,5 +134,6 @@ export function renderRelativeScore(score, options = {}) {
   const svg = renderCore(renderScore, options);
   svg.dataset.sourceParts = String(score?.parts?.length || 0);
   svg.dataset.partGrouping = score?.parts?.length > 1 ? "simultaneous" : "native";
+  svg.dataset.phraseGrouping = "first-entry-only";
   return svg;
 }
