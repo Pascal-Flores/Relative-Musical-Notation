@@ -10,6 +10,14 @@ const STEP_TO_SEMITONE = {
 
 const SHARP_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
+const DEFAULT_CLEF = Object.freeze({
+  sign: "G",
+  line: 2,
+  octaveChange: 0,
+  key: "G:2:0",
+  label: "treble",
+});
+
 function elements(parent, name) {
   if (!parent) return [];
   return Array.from(parent.children ?? []).filter((node) => node.localName === name);
@@ -84,6 +92,34 @@ function parsePitch(noteElement) {
     octave,
     midi: (octave + 1) * 12 + semitone + alter,
     label: `${step}${accidentalText(alter)}${octave}`,
+  };
+}
+
+function clefLabel(sign, line, octaveChange) {
+  const base = sign === "G" && line === 2
+    ? "treble"
+    : sign === "F" && line === 4
+      ? "bass"
+      : sign === "C" && line === 3
+        ? "alto"
+        : sign === "C" && line === 4
+          ? "tenor"
+          : `${sign}${line}`;
+
+  if (!octaveChange) return base;
+  return `${base}${octaveChange > 0 ? "+" : ""}${octaveChange}oct`;
+}
+
+function parseClef(clefElement) {
+  const sign = text(clefElement, "sign", "G").toUpperCase();
+  const line = integer(text(clefElement, "line", sign === "F" ? "4" : "2"), sign === "F" ? 4 : 2);
+  const octaveChange = integer(text(clefElement, "clef-octave-change", "0"), 0);
+  return {
+    sign,
+    line,
+    octaveChange,
+    key: `${sign}:${line}:${octaveChange}`,
+    label: clefLabel(sign, line, octaveChange),
   };
 }
 
@@ -163,6 +199,7 @@ export function parseMusicXML(xmlText) {
     let divisions = 1;
     let currentTime = { beats: 4, beatType: 4 };
     let measureStartQuarter = 0;
+    const currentClefs = new Map([["1", { ...DEFAULT_CLEF }]]);
     const events = [];
     const measures = [];
 
@@ -187,6 +224,11 @@ export function parseMusicXML(xmlText) {
               beats: Math.max(1, integer(text(time, "beats", String(currentTime.beats)), currentTime.beats)),
               beatType: Math.max(1, integer(text(time, "beat-type", String(currentTime.beatType)), currentTime.beatType)),
             };
+          }
+
+          for (const clefElement of elements(child, "clef")) {
+            const staffNumber = clefElement.getAttribute("number") || "1";
+            currentClefs.set(staffNumber, parseClef(clefElement));
           }
           continue;
         }
@@ -215,6 +257,7 @@ export function parseMusicXML(xmlText) {
         const noteType = text(child, "type", "") || inferType(durationQuarter || 1);
         const dots = elements(child, "dot").length;
         const stem = text(child, "stem", "auto").toLowerCase();
+        const clef = { ...(currentClefs.get(staff) ?? DEFAULT_CLEF) };
 
         if (!isChord) lastNoteOnsetQuarter = onsetQuarter;
 
@@ -232,6 +275,7 @@ export function parseMusicXML(xmlText) {
             stem,
             voice,
             staff,
+            clef,
             measureIndex,
             measureNumber,
             chord: isChord,
@@ -271,6 +315,7 @@ export function parseMusicXML(xmlText) {
           key,
           staff: event.staff,
           voice: event.voice,
+          clef: event.clef,
           events: [],
         });
       }
