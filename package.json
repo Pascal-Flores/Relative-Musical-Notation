@@ -1,0 +1,9 @@
+{
+  "name": "relative-musical-notation",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/musicxml.js && node --check src/render.js && node --check src/app.js"
+  }
+}
