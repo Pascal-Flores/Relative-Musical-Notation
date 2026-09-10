@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Relative Musical Notation — MusicXML POC</title>
   <link rel="stylesheet" href="./styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/vexflow@5.0.0/build/cjs/vexflow.js"></script>
   <script type="module" src="./src/app.js"></script>
 </head>
 <body>
@@ -12,7 +13,7 @@
     <div>
       <p class="eyebrow">Proof of concept</p>
       <h1>Relative Musical Notation</h1>
-      <p class="lede">MusicXML rendered without staff lines: vertical distance is chromatic, rhythm remains conventional.</p>
+      <p class="lede">MusicXML rendered without staff lines: vertical distance is chromatic, rhythm is engraved by VexFlow.</p>
     </div>
   </header>
 
@@ -42,16 +43,19 @@
         </label>
 
         <label>
+          <span>Label intervals from</span>
+          <div class="inline-control">
+            <input id="minIntervalLabel" type="range" min="1" max="12" step="1" value="3" />
+            <output id="minIntervalLabelValue" for="minIntervalLabel">3 semitones</output>
+          </div>
+        </label>
+
+        <label>
           <span>Transpose</span>
           <div class="inline-control">
             <input id="transpose" type="number" min="-24" max="24" step="1" value="0" />
             <span>semitones</span>
           </div>
-        </label>
-
-        <label class="checkbox-control">
-          <input id="showIntervals" type="checkbox" checked />
-          <span>Show interval labels</span>
         </label>
       </div>
     </section>
