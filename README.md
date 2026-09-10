@@ -8,14 +8,25 @@ The renderer takes a MusicXML file and produces an SVG score with these rules:
 - one vertical step represents one semitone;
 - each rendered melodic line starts from an absolute pitch anchor (`C4`, `F#4`, ...);
 - successive notes in a voice are connected by segments;
-- interval labels (`+2`, `-1`, ...) can be shown on those segments;
-- noteheads, stems, dots, flags and beams retain the usual rhythmic role;
+- the slope of a segment gives the interval direction, so interval labels are **unsigned magnitudes** (`3`, `5`, `12`, ...);
+- by default, intervals of 1 and 2 semitones are left unlabelled and are read directly from their geometry;
+- noteheads, stems, dots, flags, beams and rests keep their conventional rhythmic role;
 - barlines remain vertical measure separators;
 - transposition changes absolute anchors but leaves the melodic geometry unchanged.
 
-## Run the prototype
+## Engraving engine
 
-There is no build step and no dependency.
+The first POC drew rhythmic notation directly in custom SVG. The current implementation instead uses **VexFlow 5** for rhythmic engraving and horizontal rhythmic spacing.
+
+Relative Musical Notation only overrides the part that is intentionally different: **pitch geometry**. Each VexFlow note is placed on a hidden virtual stave whose vertical unit is remapped so that one semitone always has the same height. The virtual stave itself and ledger lines are never drawn.
+
+This keeps the experiment focused on the new notation instead of reimplementing a mature engraving engine's noteheads, stems, beams, dots and rests.
+
+OpenSheetMusicDisplay was considered as well, but it sits one level higher and is primarily a MusicXML-to-standard-score renderer built on VexFlow. Using VexFlow directly gives the POC access to individual note positions while preserving the engraving primitives we want to keep.
+
+VexFlow is loaded from jsDelivr by `index.html`; no local build step is required for the POC.
+
+## Run the prototype
 
 ```bash
 python3 -m http.server 8000
@@ -23,16 +34,20 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000` and either load a MusicXML file or click **Load sample**.
 
+An internet connection is currently required when opening the page because VexFlow is loaded from the CDN.
+
 ## Current controls
 
 - MusicXML file picker;
 - measures per rendered line;
 - semitone vertical spacing;
-- interval-label toggle;
+- minimum interval size that receives a numeric label (default: `3`);
 - chromatic transposition in semitones;
 - SVG download.
 
-The transposition control is deliberately included as a design test: because every line is relative to its first note, transposing the entire score should keep the exact same contour and only change the absolute starting-note labels.
+The interval threshold is deliberately exposed as a design experiment. At the default value, semitone and whole-tone motion has no number printed on the connector. Raising or lowering the threshold makes it easy to test how much annotation is actually useful.
+
+The transposition control is another design test: because every line is relative to its first note, transposing the entire score should keep the exact same contour and only change the absolute starting-note labels.
 
 ## MusicXML coverage in this POC
 
@@ -45,7 +60,7 @@ Supported well enough for experiments:
 - durations, note types and augmentation dots;
 - `backup` / `forward` timing;
 - chords through `<chord/>`;
-- first-level and additional MusicXML beams;
+- first-level MusicXML beam grouping;
 - changing divisions and time signatures.
 
 Not yet handled completely:
@@ -56,18 +71,19 @@ Not yet handled completely:
 - repeats / volta logic;
 - percussion and unpitched notes;
 - enharmonic spelling after transposition;
-- automatic musical phrase detection.
+- automatic musical phrase detection;
+- sophisticated multi-voice collision avoidance.
 
 For now a **rendered system is also a re-anchoring point**. A later version can re-anchor from explicit phrase/section markers instead of, or in addition to, line breaks.
 
 ## Files
 
 - `src/musicxml.js`: small MusicXML parser into an internal score model;
-- `src/render.js`: relative-notation SVG renderer;
+- `src/render.js`: adapter between the internal model, VexFlow rhythmic engraving and relative chromatic pitch placement;
 - `src/app.js`: browser UI;
 - `samples/example.musicxml`: two-voice sample used by the demo;
 - `docs/NOTATION.md`: current notation rules and open design questions.
 
 ## Status
 
-This is intentionally a visual and technical POC, not a complete engraving engine. Its purpose is to determine whether relative chromatic contours remain readable on real MusicXML before formalising the notation further.
+This is intentionally a visual and technical POC, not a complete MusicXML engraving engine. Its purpose is to determine whether relative chromatic contours remain readable on real music before formalising the notation further.
