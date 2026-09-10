@@ -3,8 +3,7 @@ import { midiToPitchLabel } from "./musicxml.js";
 const ANCHOR_LINE = 2.5;
 const CONNECTOR_GAP = 6;
 const CHORD_GAP = 5;
-const SMALL_INTERVAL_MARK_HALF_LENGTH = 4;
-const SMALL_INTERVAL_MARK_SPACING = 7;
+const PARALLEL_CONNECTOR_SPACING = 3.5;
 
 function requireVexFlow() {
   const vf = globalThis.VexFlow;
@@ -217,51 +216,54 @@ function drawIntervalLabel(context, x, y, magnitude) {
   context.restore();
 }
 
-function drawSmallIntervalMarks(context, segment, count) {
+function offsetSegment(segment, offset) {
   const dx = segment.x2 - segment.x1;
   const dy = segment.y2 - segment.y1;
   const length = Math.hypot(dx, dy);
-  if (length <= 0) return;
+  if (!Number.isFinite(length) || length <= 0) return segment;
 
-  const tx = dx / length;
-  const ty = dy / length;
-  const nx = -ty;
-  const ny = tx;
-  const midX = (segment.x1 + segment.x2) / 2;
-  const midY = (segment.y1 + segment.y2) / 2;
-  const offsets = count === 1
+  const nx = -dy / length;
+  const ny = dx / length;
+  return {
+    x1: segment.x1 + nx * offset,
+    y1: segment.y1 + ny * offset,
+    x2: segment.x2 + nx * offset,
+    y2: segment.y2 + ny * offset,
+  };
+}
+
+function drawParallelConnectors(context, segment, count) {
+  const offsets = count <= 1
     ? [0]
-    : [-SMALL_INTERVAL_MARK_SPACING / 2, SMALL_INTERVAL_MARK_SPACING / 2];
+    : Array.from({ length: count }, (_, index) =>
+      (index - (count - 1) / 2) * PARALLEL_CONNECTOR_SPACING);
 
   for (const offset of offsets) {
-    const cx = midX + tx * offset;
-    const cy = midY + ty * offset;
-    drawLine(
-      context,
-      cx - nx * SMALL_INTERVAL_MARK_HALF_LENGTH,
-      cy - ny * SMALL_INTERVAL_MARK_HALF_LENGTH,
-      cx + nx * SMALL_INTERVAL_MARK_HALF_LENGTH,
-      cy + ny * SMALL_INTERVAL_MARK_HALF_LENGTH,
-      { stroke: "#59616a", width: 1.4 },
-    );
+    const shifted = offsetSegment(segment, offset);
+    drawLine(context, shifted.x1, shifted.y1, shifted.x2, shifted.y2, {
+      stroke: "#727a84",
+      width: 1.4,
+    });
   }
 }
 
-function drawIntervalAnnotation(context, segment, interval) {
+function drawRelativeConnector(context, segment, interval, annotate = true) {
   const magnitude = Math.abs(interval);
-  if (magnitude === 0) return;
 
-  if (magnitude <= 2) {
-    drawSmallIntervalMarks(context, segment, magnitude);
-    return;
+  // Small chromatic motion is encoded by the connector itself:
+  // one semitone = one connecting line, two semitones = two parallel lines.
+  // Larger intervals return to one line and carry their numeric magnitude.
+  const lineCount = magnitude === 2 ? 2 : 1;
+  drawParallelConnectors(context, segment, lineCount);
+
+  if (annotate && magnitude >= 3) {
+    drawIntervalLabel(
+      context,
+      (segment.x1 + segment.x2) / 2,
+      (segment.y1 + segment.y2) / 2,
+      magnitude,
+    );
   }
-
-  drawIntervalLabel(
-    context,
-    (segment.x1 + segment.x2) / 2,
-    (segment.y1 + segment.y2) / 2,
-    magnitude,
-  );
 }
 
 function measureClusters(track, measureIndex) {
@@ -432,24 +434,22 @@ function renderTrackSystem(context, part, track, systemStart, systemEnd, top, op
   // separate gaps between adjacent noteheads so it never touches a head.
   for (const item of plotted) drawChordSpine(context, item);
 
-  // Connect successive events without touching their glyphs. Rests retain the
-  // previous sounded pitch, so the contour stays horizontal through silence and
-  // the next interval is measured from the last played note.
+  // Connect successive events without touching their glyphs. A semitone uses
+  // one connector; a whole tone uses two parallel connectors. Rests retain the
+  // previous sounded pitch, so the next pitched interval still comes from it.
   for (let index = 1; index < plotted.length; index += 1) {
     const previous = plotted[index - 1];
     const current = plotted[index];
     const segment = shortenSegment(previous.endX, previous.y, current.beginX, current.y);
     if (!segment) continue;
 
-    drawLine(context, segment.x1, segment.y1, segment.x2, segment.y2, {
-      stroke: "#727a84",
-      width: 1.4,
-    });
-
-    if (!current.isRest) {
-      const interval = current.pitchMidi - previous.pitchMidi;
-      drawIntervalAnnotation(context, segment, interval);
+    if (current.isRest) {
+      drawRelativeConnector(context, segment, 0, false);
+      continue;
     }
+
+    const interval = current.pitchMidi - previous.pitchMidi;
+    drawRelativeConnector(context, segment, interval, true);
   }
 
   for (const plan of plans) {
