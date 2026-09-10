@@ -2,7 +2,7 @@
 
 Proof of concept for a notation where **pitch is relative and chromatic** while **rhythm keeps conventional music symbols**.
 
-The renderer takes a MusicXML file and produces an SVG score with these rules:
+The renderer takes a MusicXML file (`.musicxml`, `.xml` or compressed `.mxl`) and produces an SVG score with these rules:
 
 - no horizontal staff lines;
 - one vertical step represents one semitone;
@@ -25,6 +25,8 @@ The current implementation uses **VexFlow 5** for rhythmic engraving, horizontal
 
 Each VexFlow note is placed on a hidden virtual stave whose vertical unit is remapped so that one semitone always has the same height. The virtual stave itself and ledger lines are never drawn.
 
+Compressed MusicXML (`.mxl`) is unpacked in the browser with **JSZip 3.10.1**. The loader reads `META-INF/container.xml`, follows its `rootfile` entry and feeds the extracted score to the same MusicXML parser. If an archive has no container file, the loader falls back to the first `.musicxml` or `.xml` score file it contains.
+
 ## Clef / voice grouping
 
 The parser retains `<clef number="…">` information from MusicXML and attaches the active clef to each musical event.
@@ -43,13 +45,13 @@ Clef changes occurring inside a rendered system are not yet split automatically;
 python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000` and either load a MusicXML file or click **Load sample**.
+Then open `http://localhost:8000` and load a `.musicxml`, `.xml` or `.mxl` score, or click **Load sample**.
 
-An internet connection is currently required when opening the page because VexFlow is loaded from jsDelivr.
+An internet connection is currently required when opening the page because VexFlow and JSZip are loaded from jsDelivr.
 
 ## Current controls
 
-- MusicXML file picker;
+- MusicXML / MXL file picker;
 - measures per rendered line;
 - semitone vertical spacing;
 - chromatic transposition in semitones;
@@ -59,6 +61,7 @@ An internet connection is currently required when opening the page because VexFl
 
 Supported well enough for experiments:
 
+- uncompressed `.musicxml` / `.xml` and compressed `.mxl` input;
 - `score-partwise` MusicXML;
 - parts, measures, staves, voices and clef assignments;
 - pitched notes and rests;
@@ -83,8 +86,9 @@ Not yet handled completely:
 
 ## Files
 
+- `src/mxl.js`: `.mxl` ZIP/container extractor;
 - `src/musicxml.js`: MusicXML parser into the internal score model, including clef assignments;
 - `src/render.js`: VexFlow adapter and relative chromatic renderer;
-- `src/app.js`: browser UI;
+- `src/app.js`: browser UI and file loading;
 - `samples/example.musicxml`: two-clef piano sample;
 - `docs/NOTATION.md`: current notation rules and open design questions.
