@@ -1,21 +1,11 @@
 import { midiToPitchLabel } from "./musicxml.js";
 
-const SVG_NS = "http://www.w3.org/2000/svg";
+const ANCHOR_LINE = 2.5;
 
-function svgElement(name, attributes = {}, text = null) {
-  const element = document.createElementNS(SVG_NS, name);
-  for (const [key, value] of Object.entries(attributes)) {
-    if (value === undefined || value === null) continue;
-    element.setAttribute(key, String(value));
-  }
-  if (text !== null) element.textContent = text;
-  return element;
-}
-
-function append(parent, name, attributes = {}, text = null) {
-  const node = svgElement(name, attributes, text);
-  parent.append(node);
-  return node;
+function requireVexFlow() {
+  const vf = globalThis.VexFlow;
+  if (!vf) throw new Error("VexFlow failed to load. Check the network connection and reload the page.");
+  return vf;
 }
 
 function groupByOnset(events) {
@@ -25,7 +15,7 @@ function groupByOnset(events) {
   for (const event of sorted) {
     const last = clusters.at(-1);
     if (!last || Math.abs(last.onset - event.onset) > 1e-7) {
-      clusters.push({ onset: event.onset, events: [event] });
+      clusters.push({ onset: event.onset, onsetInMeasure: event.onsetInMeasure, events: [event] });
     } else {
       last.events.push(event);
     }
@@ -43,474 +33,368 @@ function representativeNote(cluster) {
   return cluster.notes.reduce((highest, note) => note.pitch.midi > highest.pitch.midi ? note : highest);
 }
 
-function noteType(cluster) {
+function clusterDuration(cluster) {
+  const event = cluster.notes[0] ?? cluster.rests[0];
+  return Math.max(0, event?.duration ?? 0);
+}
+
+function clusterType(cluster) {
   return cluster.notes[0]?.type || cluster.rests[0]?.type || "quarter";
 }
 
-function noteDots(cluster) {
+function clusterDots(cluster) {
   return cluster.notes[0]?.dots || cluster.rests[0]?.dots || 0;
 }
 
-function flagCount(type) {
-  return {
-    eighth: 1,
-    "16th": 2,
-    "32nd": 3,
-    "64th": 4,
-  }[type] || 0;
+function toVexDuration(type, dots = 0, rest = false) {
+  const base = {
+    breve: "1/2",
+    whole: "w",
+    half: "h",
+    quarter: "q",
+    eighth: "8",
+    "16th": "16",
+    "32nd": "32",
+    "64th": "64",
+  }[type] || "q";
+
+  return `${base}${"d".repeat(Math.max(0, dots))}${rest ? "r" : ""}`;
 }
 
-function isHollow(type) {
-  return type === "whole" || type === "half" || type === "breve";
-}
+function decomposeQuarterDuration(value) {
+  const durations = [
+    [4, "w"],
+    [2, "h"],
+    [1, "q"],
+    [0.5, "8"],
+    [0.25, "16"],
+    [0.125, "32"],
+    [0.0625, "64"],
+  ];
+  const result = [];
+  let remaining = Math.max(0, value);
 
-function hasStem(type) {
-  return type !== "whole" && type !== "breve";
-}
-
-function clusterBeamStatus(cluster, level) {
-  return cluster.notes[0]?.beams?.[level] || "";
-}
-
-function clusterMaxBeamLevel(cluster) {
-  const keys = Object.keys(cluster.notes[0]?.beams || {}).map(Number).filter(Number.isFinite);
-  return keys.length ? Math.max(...keys) : 0;
-}
-
-function makeText(parent, x, y, value, extra = {}) {
-  return append(parent, "text", {
-    x,
-    y,
-    "font-family": "Inter, ui-sans-serif, system-ui, sans-serif",
-    "font-size": 12,
-    fill: "#252a31",
-    ...extra,
-  }, value);
-}
-
-function drawIntervalLabel(parent, x, y, interval) {
-  const label = interval > 0 ? `+${interval}` : String(interval);
-  const width = Math.max(22, 9 + label.length * 7);
-
-  append(parent, "rect", {
-    x: x - width / 2,
-    y: y - 10,
-    width,
-    height: 16,
-    rx: 5,
-    fill: "#ffffff",
-    "fill-opacity": 0.94,
-  });
-
-  makeText(parent, x, y + 2, label, {
-    "text-anchor": "middle",
-    "font-size": 10,
-    "font-weight": 650,
-    fill: "#555e68",
-  });
-}
-
-function drawRest(parent, x, y, type, dots = 0) {
-  const group = append(parent, "g", { "aria-label": `${type} rest` });
-
-  if (type === "whole" || type === "breve") {
-    append(group, "rect", { x: x - 7, y: y - 2, width: 14, height: 5, rx: 0.6, fill: "#17191d" });
-  } else if (type === "half") {
-    append(group, "rect", { x: x - 7, y: y - 5, width: 14, height: 5, rx: 0.6, fill: "#17191d" });
-  } else if (type === "quarter") {
-    append(group, "path", {
-      d: `M ${x - 2} ${y - 16} L ${x + 5} ${y - 8} L ${x - 2} ${y} L ${x + 5} ${y + 7} L ${x} ${y + 16}`,
-      fill: "none",
-      stroke: "#17191d",
-      "stroke-width": 3.2,
-      "stroke-linecap": "round",
-      "stroke-linejoin": "round",
-    });
-  } else {
-    const flags = Math.max(1, flagCount(type));
-    append(group, "line", {
-      x1: x + 3,
-      y1: y - 16,
-      x2: x - 1,
-      y2: y + 15,
-      stroke: "#17191d",
-      "stroke-width": 2,
-    });
-    for (let i = 0; i < flags; i += 1) {
-      const hookY = y - 10 + i * 8;
-      append(group, "circle", { cx: x + 4, cy: hookY, r: 3.5, fill: "#17191d" });
-      append(group, "path", {
-        d: `M ${x + 4} ${hookY} Q ${x + 12} ${hookY + 3}, ${x + 8} ${hookY + 10}`,
-        fill: "none",
-        stroke: "#17191d",
-        "stroke-width": 2,
-        "stroke-linecap": "round",
-      });
+  for (const [quarters, vex] of durations) {
+    while (remaining + 1e-7 >= quarters) {
+      result.push(vex);
+      remaining -= quarters;
     }
   }
-
-  for (let i = 0; i < dots; i += 1) {
-    append(group, "circle", { cx: x + 11 + i * 6, cy: y - 1, r: 1.8, fill: "#17191d" });
-  }
+  return result;
 }
 
-function drawFlag(parent, x, stemEndY, direction, index) {
-  const offset = index * 7 * (direction === "up" ? 1 : -1);
-  if (direction === "up") {
-    append(parent, "path", {
-      d: `M ${x} ${stemEndY + offset} Q ${x + 13} ${stemEndY + 4 + offset}, ${x + 9} ${stemEndY + 16 + offset}`,
-      fill: "none",
-      stroke: "#17191d",
-      "stroke-width": 3,
-      "stroke-linecap": "round",
-    });
+function makeGhosts(vf, durationQuarter) {
+  return decomposeQuarterDuration(durationQuarter).map((duration) => new vf.GhostNote({ duration }));
+}
+
+function makeDummyKeys(count) {
+  const keys = ["c/4", "d/4", "e/4", "f/4", "g/4", "a/4", "b/4", "c/5", "d/5", "e/5", "f/5", "g/5"];
+  return Array.from({ length: Math.max(1, count) }, (_, index) => keys[index % keys.length]);
+}
+
+function makeVexNote(vf, cluster, stave, anchorMidi, transpose) {
+  const isRest = cluster.notes.length === 0;
+  const notes = isRest ? [] : [...cluster.notes].sort((a, b) => a.pitch.midi - b.pitch.midi);
+  const duration = toVexDuration(clusterType(cluster), clusterDots(cluster), isRest);
+  const keys = isRest ? ["b/4"] : makeDummyKeys(notes.length);
+  const note = new vf.StaveNote({ keys, duration });
+
+  if (isRest) {
+    note.setKeyLine(0, ANCHOR_LINE);
   } else {
-    append(parent, "path", {
-      d: `M ${x} ${stemEndY + offset} Q ${x - 13} ${stemEndY - 4 + offset}, ${x - 9} ${stemEndY - 16 + offset}`,
-      fill: "none",
-      stroke: "#17191d",
-      "stroke-width": 3,
-      "stroke-linecap": "round",
+    notes.forEach((event, index) => {
+      const delta = event.pitch.midi + transpose - anchorMidi;
+      note.setKeyLine(index, ANCHOR_LINE + delta * 0.5);
     });
   }
+
+  const explicitStem = cluster.notes[0]?.stem;
+  if (explicitStem === "up") note.setStemDirection(vf.Stem.UP);
+  else if (explicitStem === "down") note.setStemDirection(vf.Stem.DOWN);
+
+  note.setStave(stave);
+  note.drawLedgerLines = () => undefined;
+
+  if (clusterDots(cluster) > 0) {
+    vf.Dot.buildAndAttach([note], { all: true });
+  }
+
+  return note;
 }
 
-function drawNoteCluster(parent, cluster, x, yForMidi, transpose) {
-  if (!cluster.notes.length) return;
-
-  const type = noteType(cluster);
-  const dots = noteDots(cluster);
-  const noteYs = cluster.notes.map((note) => yForMidi(note.pitch.midi + transpose));
-  const direction = cluster.beam?.direction || (cluster.notes[0]?.stem === "down" ? "down" : "up");
-  const stemX = direction === "up" ? x + 5 : x - 5;
-
-  if (noteYs.length > 1) {
-    append(parent, "line", {
-      x1: x,
-      y1: Math.min(...noteYs),
-      x2: x,
-      y2: Math.max(...noteYs),
-      stroke: "#90969e",
-      "stroke-width": 1,
-    });
-  }
-
-  for (const y of noteYs) {
-    append(parent, "ellipse", {
-      cx: x,
-      cy: y,
-      rx: 6,
-      ry: 4.2,
-      transform: `rotate(-18 ${x} ${y})`,
-      fill: isHollow(type) ? "#ffffff" : "#17191d",
-      stroke: "#17191d",
-      "stroke-width": isHollow(type) ? 1.8 : 1,
-    });
-
-    for (let i = 0; i < dots; i += 1) {
-      append(parent, "circle", { cx: x + 10 + i * 6, cy: y - 1, r: 1.8, fill: "#17191d" });
-    }
-  }
-
-  if (!hasStem(type)) return;
-
-  const stemStartY = direction === "up" ? Math.max(...noteYs) : Math.min(...noteYs);
-  const defaultEndY = direction === "up" ? Math.min(...noteYs) - 28 : Math.max(...noteYs) + 28;
-  const stemEndY = cluster.beam?.y ?? defaultEndY;
-
-  append(parent, "line", {
-    x1: stemX,
-    y1: stemStartY,
-    x2: stemX,
-    y2: stemEndY,
-    stroke: "#17191d",
-    "stroke-width": 1.7,
-  });
-
-  if (!cluster.beam) {
-    const count = flagCount(type);
-    for (let i = 0; i < count; i += 1) drawFlag(parent, stemX, stemEndY, direction, i);
-  }
-}
-
-function prepareAndDrawBeams(parent, pitchedClusters, yForMidi, transpose) {
-  let active = [];
+function beamGroups(items) {
   const groups = [];
+  let active = [];
 
-  const finish = () => {
+  const flush = () => {
     if (active.length >= 2) groups.push(active);
     active = [];
   };
 
-  for (const cluster of pitchedClusters) {
-    const status = clusterBeamStatus(cluster, 1);
+  for (const item of items) {
+    if (!item.cluster.notes.length) {
+      flush();
+      continue;
+    }
+
+    const status = item.cluster.notes[0]?.beams?.[1] || "";
     if (status === "begin") {
-      finish();
-      active = [cluster];
+      flush();
+      active = [item];
     } else if (status === "continue") {
-      if (!active.length) active = [cluster];
-      else active.push(cluster);
+      if (!active.length) active = [item];
+      else active.push(item);
     } else if (status === "end") {
-      if (!active.length) active = [cluster];
-      else active.push(cluster);
-      finish();
-    } else if (active.length) {
-      finish();
+      if (!active.length) active = [item];
+      else active.push(item);
+      flush();
+    } else {
+      flush();
     }
   }
-  finish();
 
-  for (const group of groups) {
-    const allYs = group.flatMap((cluster) => cluster.notes.map((note) => yForMidi(note.pitch.midi + transpose)));
-    const beamY = Math.min(...allYs) - 31;
-
-    for (const cluster of group) {
-      cluster.beam = { y: beamY, direction: "up" };
-    }
-
-    const firstX = group[0].x + 5;
-    const lastX = group.at(-1).x + 5;
-    append(parent, "line", {
-      x1: firstX,
-      y1: beamY,
-      x2: lastX,
-      y2: beamY,
-      stroke: "#17191d",
-      "stroke-width": 5,
-      "stroke-linecap": "butt",
-    });
-
-    const maxLevel = Math.max(...group.map(clusterMaxBeamLevel));
-    for (let level = 2; level <= maxLevel; level += 1) {
-      let levelStart = null;
-      const levelY = beamY + (level - 1) * 7;
-
-      const drawSegment = (startCluster, endCluster) => {
-        append(parent, "line", {
-          x1: startCluster.x + 5,
-          y1: levelY,
-          x2: endCluster.x + 5,
-          y2: levelY,
-          stroke: "#17191d",
-          "stroke-width": 4.2,
-          "stroke-linecap": "butt",
-        });
-      };
-
-      for (const cluster of group) {
-        const status = clusterBeamStatus(cluster, level);
-
-        if (status === "begin") {
-          levelStart = cluster;
-        } else if (status === "continue") {
-          if (!levelStart) levelStart = cluster;
-        } else if (status === "end") {
-          if (levelStart) drawSegment(levelStart, cluster);
-          else drawSegment({ x: cluster.x - 13 }, cluster);
-          levelStart = null;
-        } else if (status === "forward hook") {
-          drawSegment(cluster, { x: cluster.x + 13 });
-        } else if (status === "backward hook") {
-          drawSegment({ x: cluster.x - 13 }, cluster);
-        } else if (levelStart) {
-          drawSegment(levelStart, cluster);
-          levelStart = null;
-        }
-      }
-
-      if (levelStart) drawSegment(levelStart, { x: levelStart.x + 13 });
-    }
-  }
+  flush();
+  return groups;
 }
 
-function renderTrackSystem(parent, part, track, systemStart, systemEnd, top, options) {
-  const {
-    measuresPerSystem,
-    semitoneSpacing,
-    transpose,
-    showIntervals,
-    leftMargin,
-    measureWidth,
-  } = options;
+function drawText(context, text, x, y, options = {}) {
+  context.save();
+  context.setFont(options.family || "Arial", options.size || 11, options.weight || "normal");
+  context.setFillStyle(options.fill || "#252a31");
+  context.setTextAlign(options.align || "left");
+  context.fillText(String(text), x, y);
+  context.restore();
+}
 
-  const systemEvents = track.events.filter((event) => event.measureIndex >= systemStart && event.measureIndex < systemEnd);
-  const clusters = groupByOnset(systemEvents);
-  const allNotes = clusters.flatMap((cluster) => cluster.notes);
-  const anchorNote = allNotes[0] ?? null;
-  const anchorMidi = anchorNote ? anchorNote.pitch.midi + transpose : 60 + transpose;
-  const deltas = allNotes.map((note) => note.pitch.midi + transpose - anchorMidi);
+function drawLine(context, x1, y1, x2, y2, options = {}) {
+  context.save();
+  context.beginPath();
+  context.setStrokeStyle(options.stroke || "#77808a");
+  context.setLineWidth(options.width || 1.2);
+  context.moveTo(x1, y1);
+  context.lineTo(x2, y2);
+  context.stroke();
+  context.restore();
+}
+
+function drawIntervalLabel(context, x, y, interval) {
+  const text = String(Math.abs(interval));
+  context.save();
+  context.setFont("Arial", 9, "bold");
+  context.setFillStyle("#ffffff");
+  const width = Math.max(15, context.measureText(text).width + 8);
+  context.fillRect(x - width / 2, y - 10, width, 14);
+  context.setFillStyle("#59616a");
+  context.setTextAlign("center");
+  context.fillText(text, x, y + 1);
+  context.restore();
+}
+
+function measureClusters(track, measureIndex) {
+  return groupByOnset(track.events.filter((event) => event.measureIndex === measureIndex));
+}
+
+function measurePlan(part, track, measureIndex, stave, context, anchorMidi, options) {
+  const vf = requireVexFlow();
+  const measure = part.measures[measureIndex];
+  const clusters = measureClusters(track, measureIndex);
+  const tickables = [];
+  const noteItems = [];
+  let cursor = 0;
+
+  for (const cluster of clusters) {
+    const gap = Math.max(0, cluster.onsetInMeasure - cursor);
+    tickables.push(...makeGhosts(vf, gap));
+
+    const note = makeVexNote(vf, cluster, stave, anchorMidi, options.transpose);
+    note.setContext(context);
+    tickables.push(note);
+    noteItems.push({ cluster, note });
+    cursor = Math.max(cursor, cluster.onsetInMeasure + clusterDuration(cluster));
+  }
+
+  tickables.push(...makeGhosts(vf, Math.max(0, measure.duration - cursor)));
+  if (!tickables.length) tickables.push(...makeGhosts(vf, measure.duration || 1));
+
+  tickables.forEach((tickable) => tickable.setContext?.(context));
+
+  const voice = new vf.Voice({ time: `${measure.beats}/${measure.beatType}` });
+  voice.setMode(vf.VoiceMode.SOFT);
+  voice.addTickables(tickables);
+  new vf.Formatter().joinVoices([voice]).formatToStave([voice], stave, { context });
+
+  const beams = beamGroups(noteItems).map((group) => new vf.Beam(group.map((item) => item.note), { autoStem: false }));
+  beams.forEach((beam) => beam.setContext(context));
+
+  return { measure, stave, voice, beams, noteItems };
+}
+
+function systemGeometry(part, track, systemStart, systemEnd, top, semitoneSpacing, transpose) {
+  const events = track.events.filter((event) => event.measureIndex >= systemStart && event.measureIndex < systemEnd);
+  const notes = events.filter((event) => event.kind === "note" && event.pitch);
+  const anchor = notes[0] ?? null;
+  const anchorMidi = anchor ? anchor.pitch.midi + transpose : 60 + transpose;
+  const deltas = notes.map((event) => event.pitch.midi + transpose - anchorMidi);
   const minDelta = deltas.length ? Math.min(...deltas) : 0;
   const maxDelta = deltas.length ? Math.max(...deltas) : 0;
   const span = maxDelta - minDelta;
-  const rowHeight = Math.max(96, 80 + span * semitoneSpacing);
-  const pitchTop = top + 39;
-  const yForMidi = (midi) => pitchTop + (maxDelta - (midi - anchorMidi)) * semitoneSpacing;
-  const anchorY = yForMidi(anchorMidi);
-  const rowBottom = top + rowHeight;
+  const pitchTop = top + 54;
+  const rowHeight = Math.max(118, 96 + span * semitoneSpacing);
+  const anchorY = pitchTop + maxDelta * semitoneSpacing;
 
-  makeText(parent, 16, top + 18, `staff ${track.staff} · voice ${track.voice}`, {
-    "font-size": 11,
-    "font-weight": 650,
-    fill: "#646c76",
+  return { anchor, anchorMidi, minDelta, maxDelta, span, pitchTop, anchorY, rowHeight };
+}
+
+function renderTrackSystem(context, part, track, systemStart, systemEnd, top, options) {
+  const vf = requireVexFlow();
+  const geometry = systemGeometry(part, track, systemStart, systemEnd, top, options.semitoneSpacing, options.transpose);
+  const { anchor, anchorMidi, anchorY, rowHeight } = geometry;
+  const rowBottom = top + rowHeight;
+  const plans = [];
+
+  drawText(context, `staff ${track.staff} · voice ${track.voice}`, 18, top + 17, {
+    size: 10,
+    weight: "bold",
+    fill: "#68717b",
   });
 
-  if (anchorNote) {
-    const anchorLabel = transpose === 0 ? anchorNote.pitch.label : midiToPitchLabel(anchorMidi);
-    makeText(parent, leftMargin - 12, anchorY + 4, anchorLabel, {
-      "text-anchor": "end",
-      "font-size": 13,
-      "font-weight": 750,
+  if (anchor) {
+    drawText(context, midiToPitchLabel(anchorMidi), options.leftMargin - 14, anchorY + 4, {
+      size: 13,
+      weight: "bold",
+      align: "right",
       fill: "#17191d",
     });
-    makeText(parent, leftMargin - 12, anchorY - 11, "start", {
-      "text-anchor": "end",
-      "font-size": 9,
+    drawText(context, "start", options.leftMargin - 14, anchorY - 11, {
+      size: 9,
+      align: "right",
       fill: "#90969e",
     });
   }
 
   for (let measureIndex = systemStart; measureIndex < systemEnd; measureIndex += 1) {
     const localIndex = measureIndex - systemStart;
+    const x = options.leftMargin + localIndex * options.measureWidth;
     const measure = part.measures[measureIndex];
     if (!measure) continue;
-    const x = leftMargin + localIndex * measureWidth;
 
-    append(parent, "line", {
-      x1: x,
-      y1: top + 27,
-      x2: x,
-      y2: rowBottom - 18,
-      stroke: "#d7dade",
-      "stroke-width": 1,
-    });
+    drawLine(context, x, top + 28, x, rowBottom - 18, { stroke: "#d6dade", width: 1 });
+    drawText(context, measure.number, x + 7, top + 18, { size: 9, fill: "#969da5" });
 
-    makeText(parent, x + 7, top + 17, measure.number, {
-      "font-size": 9,
-      fill: "#9aa0a8",
+    const spacing = options.semitoneSpacing * 2;
+    const virtualStaveY = anchorY - (5 - ANCHOR_LINE) * spacing;
+    const stave = new vf.Stave(x + 4, virtualStaveY, options.measureWidth - 8, {
+      spacing_between_lines_px: spacing,
+      space_above_staff_ln: 0,
+      space_below_staff_ln: 0,
+      left_bar: false,
+      right_bar: false,
     });
+    stave.setContext(context);
+    stave.setNoteStartX(x + 11);
+
+    plans.push(measurePlan(part, track, measureIndex, stave, context, anchorMidi, options));
   }
 
-  const endingX = leftMargin + (systemEnd - systemStart) * measureWidth;
-  append(parent, "line", {
-    x1: endingX,
-    y1: top + 27,
-    x2: endingX,
-    y2: rowBottom - 18,
-    stroke: "#d7dade",
-    "stroke-width": 1,
-  });
+  const endX = options.leftMargin + (systemEnd - systemStart) * options.measureWidth;
+  drawLine(context, endX, top + 28, endX, rowBottom - 18, { stroke: "#d6dade", width: 1 });
 
-  function xForCluster(cluster) {
-    const event = cluster.events[0];
-    const measure = part.measures[event.measureIndex];
-    const localMeasure = event.measureIndex - systemStart;
-    const innerPadding = 22;
-    const usable = measureWidth - innerPadding * 2;
-    const localQuarter = Math.max(0, event.onset - measure.start);
-    const ratio = measure.duration > 0 ? Math.min(1, localQuarter / measure.duration) : 0;
-    return leftMargin + localMeasure * measureWidth + innerPadding + usable * ratio;
+  const plotted = [];
+  for (const plan of plans) {
+    for (const item of plan.noteItems) {
+      const rep = representativeNote(item.cluster);
+      plotted.push({
+        ...item,
+        representative: rep,
+        x: item.note.getAbsoluteX() + item.note.getXShift(),
+        y: rep ? anchorY - (rep.pitch.midi + options.transpose - anchorMidi) * options.semitoneSpacing : anchorY,
+      });
+    }
   }
-
-  for (const cluster of clusters) cluster.x = xForCluster(cluster);
 
   let previous = null;
-  for (const cluster of clusters) {
-    if (!cluster.notes.length) {
-      if (cluster.rests.length) previous = null;
+  for (const item of plotted) {
+    if (!item.representative) {
+      previous = null;
       continue;
     }
-
-    const currentRepresentative = representativeNote(cluster);
-    if (previous && currentRepresentative) {
-      const previousRepresentative = representativeNote(previous);
-      const x1 = previous.x;
-      const y1 = yForMidi(previousRepresentative.pitch.midi + transpose);
-      const x2 = cluster.x;
-      const y2 = yForMidi(currentRepresentative.pitch.midi + transpose);
-
-      append(parent, "line", {
-        x1,
-        y1,
-        x2,
-        y2,
-        stroke: "#7d858f",
-        "stroke-width": 1.45,
-        "stroke-linecap": "round",
-      });
-
-      if (showIntervals) {
-        const interval = Math.round(currentRepresentative.pitch.midi - previousRepresentative.pitch.midi);
-        drawIntervalLabel(parent, (x1 + x2) / 2, (y1 + y2) / 2, interval);
+    if (previous?.representative) {
+      drawLine(context, previous.x + 6, previous.y, item.x - 6, item.y, { stroke: "#727a84", width: 1.4 });
+      const interval = item.representative.pitch.midi - previous.representative.pitch.midi;
+      if (Math.abs(interval) >= options.minIntervalLabel) {
+        drawIntervalLabel(context, (previous.x + item.x) / 2, (previous.y + item.y) / 2, interval);
       }
     }
-    previous = cluster;
+    previous = item;
   }
 
-  const pitchedClusters = clusters.filter((cluster) => cluster.notes.length);
-  prepareAndDrawBeams(parent, pitchedClusters, yForMidi, transpose);
-
-  for (const cluster of clusters) {
-    if (cluster.notes.length) {
-      drawNoteCluster(parent, cluster, cluster.x, yForMidi, transpose);
-    } else if (cluster.rests.length) {
-      drawRest(parent, cluster.x, anchorY, noteType(cluster), noteDots(cluster));
-    }
+  for (const plan of plans) {
+    plan.voice.draw(context, plan.stave);
+    plan.beams.forEach((beam) => beam.draw());
   }
 
   return rowHeight;
 }
 
-export function renderRelativeScore(score, settings = {}) {
-  const options = {
-    measuresPerSystem: Math.max(1, Number(settings.measuresPerSystem) || 4),
-    semitoneSpacing: Math.max(4, Number(settings.semitoneSpacing) || 8),
-    transpose: Number(settings.transpose) || 0,
-    showIntervals: settings.showIntervals !== false,
-    leftMargin: 118,
-    measureWidth: 205,
-  };
-
-  const maxColumns = Math.max(1, Math.min(options.measuresPerSystem, score.measureCount));
-  const width = options.leftMargin + maxColumns * options.measureWidth + 30;
-  const svg = svgElement("svg", {
-    xmlns: SVG_NS,
-    viewBox: `0 0 ${width} 100`,
-    width,
-    role: "img",
-    "aria-label": `Relative notation for ${score.metadata.title}`,
-  });
-
-  append(svg, "rect", { x: 0, y: 0, width: "100%", height: "100%", fill: "#ffffff" });
-  makeText(svg, 18, 28, score.metadata.title, { "font-size": 19, "font-weight": 760, fill: "#17191d" });
-  if (score.metadata.composer) {
-    makeText(svg, 18, 48, score.metadata.composer, { "font-size": 11, fill: "#737b85" });
-  }
-
-  let cursorY = score.metadata.composer ? 70 : 56;
+function calculateLayout(score, options) {
+  let top = 58;
+  const rows = [];
 
   for (const part of score.parts) {
-    makeText(svg, 18, cursorY + 18, part.name, { "font-size": 14, "font-weight": 760, fill: "#30353b" });
-    cursorY += 31;
-
-    const systemCount = Math.max(1, Math.ceil(part.measures.length / options.measuresPerSystem));
-
-    for (let system = 0; system < systemCount; system += 1) {
-      const systemStart = system * options.measuresPerSystem;
+    top += 32;
+    for (let systemStart = 0; systemStart < part.measures.length; systemStart += options.measuresPerSystem) {
       const systemEnd = Math.min(part.measures.length, systemStart + options.measuresPerSystem);
-
+      let systemHeight = 0;
       for (const track of part.tracks) {
-        const rowHeight = renderTrackSystem(svg, part, track, systemStart, systemEnd, cursorY, options);
-        cursorY += rowHeight + 12;
+        const geometry = systemGeometry(part, track, systemStart, systemEnd, top + systemHeight, options.semitoneSpacing, options.transpose);
+        rows.push({ part, track, systemStart, systemEnd, top: top + systemHeight, rowHeight: geometry.rowHeight });
+        systemHeight += geometry.rowHeight + 12;
       }
-
-      cursorY += 13;
+      top += systemHeight + 24;
     }
-
-    cursorY += 14;
+    top += 12;
   }
 
-  const height = Math.max(220, cursorY + 18);
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.setAttribute("height", String(height));
+  return { rows, height: Math.max(220, top + 20) };
+}
+
+export function renderRelativeScore(score, userOptions = {}) {
+  const vf = requireVexFlow();
+  const options = {
+    measuresPerSystem: Math.max(1, Math.min(8, Number(userOptions.measuresPerSystem) || 4)),
+    semitoneSpacing: Math.max(5, Math.min(14, Number(userOptions.semitoneSpacing) || 8)),
+    transpose: Math.max(-48, Math.min(48, Number(userOptions.transpose) || 0)),
+    minIntervalLabel: Math.max(1, Math.min(12, Number(userOptions.minIntervalLabel) || 3)),
+    leftMargin: 96,
+    measureWidth: 190,
+  };
+
+  const width = options.leftMargin + options.measuresPerSystem * options.measureWidth + 28;
+  const layout = calculateLayout(score, options);
+  const host = document.createElement("div");
+  const renderer = new vf.Renderer(host, vf.Renderer.Backends.SVG);
+  renderer.resize(width, layout.height);
+  const context = renderer.getContext();
+
+  drawText(context, score.metadata.title || "Untitled score", 18, 27, { size: 18, weight: "bold", fill: "#17191d" });
+  if (score.metadata.composer) {
+    drawText(context, score.metadata.composer, 18, 45, { size: 10, fill: "#737b84" });
+  }
+
+  let previousPart = null;
+  for (const row of layout.rows) {
+    if (row.part !== previousPart) {
+      drawText(context, row.part.name, 18, row.top - 12, { size: 12, weight: "bold", fill: "#3f464e" });
+      previousPart = row.part;
+    }
+    renderTrackSystem(context, row.part, row.track, row.systemStart, row.systemEnd, row.top, options);
+  }
+
+  const svg = host.querySelector("svg");
+  if (!svg) throw new Error("VexFlow did not produce an SVG document.");
+  svg.setAttribute("viewBox", `0 0 ${width} ${layout.height}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `${score.metadata.title || "Score"} in relative chromatic notation`);
+  svg.dataset.renderer = "VexFlow 5";
   return svg;
 }
