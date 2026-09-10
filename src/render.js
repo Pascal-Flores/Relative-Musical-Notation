@@ -1,6 +1,10 @@
 import { midiToPitchLabel } from "./musicxml.js";
 
 const ANCHOR_LINE = 2.5;
+const CONNECTOR_GAP = 6;
+const CHORD_GAP = 5;
+const SMALL_INTERVAL_MARK_HALF_LENGTH = 4;
+const SMALL_INTERVAL_MARK_SPACING = 7;
 
 function requireVexFlow() {
   const vf = globalThis.VexFlow;
@@ -182,8 +186,26 @@ function drawLine(context, x1, y1, x2, y2, options = {}) {
   context.restore();
 }
 
-function drawIntervalLabel(context, x, y, interval) {
-  const text = String(Math.abs(interval));
+function shortenSegment(x1, y1, x2, y2, startGap = CONNECTOR_GAP, endGap = CONNECTOR_GAP) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.hypot(dx, dy);
+  const remaining = length - startGap - endGap;
+
+  if (!Number.isFinite(length) || length <= 0 || remaining <= 1) return null;
+
+  const ux = dx / length;
+  const uy = dy / length;
+  return {
+    x1: x1 + ux * startGap,
+    y1: y1 + uy * startGap,
+    x2: x2 - ux * endGap,
+    y2: y2 - uy * endGap,
+  };
+}
+
+function drawIntervalLabel(context, x, y, magnitude) {
+  const text = String(magnitude);
   context.save();
   context.setFont("Arial", 9, "bold");
   const textWidth = context.measureText(text).width;
@@ -193,6 +215,53 @@ function drawIntervalLabel(context, x, y, interval) {
   context.setFillStyle("#59616a");
   context.fillText(text, x - textWidth / 2, y + 1);
   context.restore();
+}
+
+function drawSmallIntervalMarks(context, segment, count) {
+  const dx = segment.x2 - segment.x1;
+  const dy = segment.y2 - segment.y1;
+  const length = Math.hypot(dx, dy);
+  if (length <= 0) return;
+
+  const tx = dx / length;
+  const ty = dy / length;
+  const nx = -ty;
+  const ny = tx;
+  const midX = (segment.x1 + segment.x2) / 2;
+  const midY = (segment.y1 + segment.y2) / 2;
+  const offsets = count === 1
+    ? [0]
+    : [-SMALL_INTERVAL_MARK_SPACING / 2, SMALL_INTERVAL_MARK_SPACING / 2];
+
+  for (const offset of offsets) {
+    const cx = midX + tx * offset;
+    const cy = midY + ty * offset;
+    drawLine(
+      context,
+      cx - nx * SMALL_INTERVAL_MARK_HALF_LENGTH,
+      cy - ny * SMALL_INTERVAL_MARK_HALF_LENGTH,
+      cx + nx * SMALL_INTERVAL_MARK_HALF_LENGTH,
+      cy + ny * SMALL_INTERVAL_MARK_HALF_LENGTH,
+      { stroke: "#59616a", width: 1.4 },
+    );
+  }
+}
+
+function drawIntervalAnnotation(context, segment, interval) {
+  const magnitude = Math.abs(interval);
+  if (magnitude === 0) return;
+
+  if (magnitude <= 2) {
+    drawSmallIntervalMarks(context, segment, magnitude);
+    return;
+  }
+
+  drawIntervalLabel(
+    context,
+    (segment.x1 + segment.x2) / 2,
+    (segment.y1 + segment.y2) / 2,
+    magnitude,
+  );
 }
 
 function measureClusters(track, measureIndex) {
@@ -301,6 +370,21 @@ function plottedGeometry(item, transpose) {
   };
 }
 
+function drawChordSpine(context, item) {
+  if (item.isRest || item.ys.length < 2) return;
+
+  const ys = [...item.ys].sort((a, b) => a - b);
+  for (let index = 1; index < ys.length; index += 1) {
+    const startY = ys[index - 1] + CHORD_GAP;
+    const endY = ys[index] - CHORD_GAP;
+    if (endY <= startY) continue;
+    drawLine(context, item.centerX, startY, item.centerX, endY, {
+      stroke: "#727a84",
+      width: 1.4,
+    });
+  }
+}
+
 function renderTrackSystem(context, part, track, systemStart, systemEnd, top, options) {
   const vf = requireVexFlow();
   const geometry = systemGeometry(part, track, systemStart, systemEnd, top, options.semitoneSpacing, options.transpose);
@@ -344,37 +428,27 @@ function renderTrackSystem(context, part, track, systemStart, systemEnd, top, op
 
   const plotted = plans.flatMap((plan) => plan.noteItems.map((item) => plottedGeometry(item, options.transpose)));
 
-  // Chords are simultaneous vertical pitch structures. Draw their interval spine
-  // behind the noteheads rather than treating them as a single floating point.
-  for (const item of plotted) {
-    if (item.isRest || item.ys.length < 2) continue;
-    drawLine(context, item.centerX, Math.min(...item.ys), item.centerX, Math.max(...item.ys), {
-      stroke: "#727a84",
-      width: 1.4,
-    });
-  }
+  // Chords are simultaneous vertical structures. The spine is split into
+  // separate gaps between adjacent noteheads so it never touches a head.
+  for (const item of plotted) drawChordSpine(context, item);
 
-  // Connect the actual VexFlow notehead / rest glyph edges. Rests retain the
+  // Connect successive events without touching their glyphs. Rests retain the
   // previous sounded pitch, so the contour stays horizontal through silence and
-  // the next leap is still measured from the last played note.
+  // the next interval is measured from the last played note.
   for (let index = 1; index < plotted.length; index += 1) {
     const previous = plotted[index - 1];
     const current = plotted[index];
-    drawLine(context, previous.endX, previous.y, current.beginX, current.y, {
+    const segment = shortenSegment(previous.endX, previous.y, current.beginX, current.y);
+    if (!segment) continue;
+
+    drawLine(context, segment.x1, segment.y1, segment.x2, segment.y2, {
       stroke: "#727a84",
       width: 1.4,
     });
 
     if (!current.isRest) {
       const interval = current.pitchMidi - previous.pitchMidi;
-      if (Math.abs(interval) >= options.minIntervalLabel) {
-        drawIntervalLabel(
-          context,
-          (previous.endX + current.beginX) / 2,
-          (previous.y + current.y) / 2,
-          interval,
-        );
-      }
+      drawIntervalAnnotation(context, segment, interval);
     }
   }
 
@@ -432,7 +506,6 @@ export function renderRelativeScore(score, userOptions = {}) {
     measuresPerSystem: Math.max(1, Math.min(8, Number(userOptions.measuresPerSystem) || 4)),
     semitoneSpacing: Math.max(5, Math.min(14, Number(userOptions.semitoneSpacing) || 8)),
     transpose: Math.max(-48, Math.min(48, Number(userOptions.transpose) || 0)),
-    minIntervalLabel: Math.max(1, Math.min(12, Number(userOptions.minIntervalLabel) || 3)),
     leftMargin: 58,
     measureWidth: 190,
   };
