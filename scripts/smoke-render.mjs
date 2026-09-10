@@ -44,6 +44,19 @@ if (svg.dataset.partGrouping !== "native" || svg.dataset.sourceParts !== "1") {
   throw new Error("A one-part MusicXML score should pass through the simultaneous-score wrapper unchanged.");
 }
 
+if (svg.dataset.phraseGrouping !== "first-entry-only") {
+  throw new Error(`Unexpected phrase grouping: ${svg.dataset.phraseGrouping || "missing"}.`);
+}
+
+if (svg.dataset.chordSpineLayout !== "adaptive-tight-gap") {
+  throw new Error(`Unexpected chord-spine layout: ${svg.dataset.chordSpineLayout || "missing"}.`);
+}
+
+const chordSpineLines = svg.querySelectorAll('path[data-relative-chord-spine="true"]').length;
+if (chordSpineLines < 7) {
+  throw new Error(`Expected at least 7 redrawn C-E-G chord interval lines, got ${chordSpineLines}.`);
+}
+
 if (svg.dataset.anchorPolicy !== "phrase-aware-continuation") {
   throw new Error(`Unexpected anchor policy: ${svg.dataset.anchorPolicy || "missing"}.`);
 }
@@ -143,6 +156,27 @@ if (chordAnchorOutput.includes(">C4</text>")) {
   throw new Error("A phrase-start chord should not anchor the lower root when the melodic contour uses its highest tone.");
 }
 
+// Tight chord seconds need a visible interval line even though the two
+// noteheads leave less than the old fixed 5 px gap on each side.
+const tightChordSource = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>Chord test</part-name></score-part></part-list>
+  <part id="P1"><measure number="1">
+    <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+    <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type></note>
+    <note><chord/><pitch><step>C</step><alter>1</alter><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type></note>
+  </measure></part>
+</score-partwise>`;
+const tightChordSvg = renderRelativeScore(parseMusicXML(tightChordSource), {
+  measuresPerSystem: 1,
+  semitoneSpacing: 5,
+  transpose: 0,
+});
+const tightLines = Array.from(tightChordSvg.querySelectorAll('path[data-relative-chord-spine="true"]'));
+if (tightLines.length !== 1) {
+  throw new Error(`Expected one visible line for a one-semitone chord gap, got ${tightLines.length}.`);
+}
+
 // The outgoing segment at a graphical line break must already point toward the
 // next pitch. For this C4 -> G4 test, the right-edge continuation must slope up
 // (SVG y decreases), rather than remaining horizontal.
@@ -225,5 +259,5 @@ if (mxlScore.metadata.title !== score.metadata.title || mxlScore.measureCount !=
 }
 
 console.log(
-  `VexFlow smoke render OK: ${output.length} SVG characters, ${noteGlyphs} path elements; simultaneous multi-part grouping, chord anchors, directional continuations, phrase continuity, clef grouping 2→1 and MXL extraction verified.`,
+  `VexFlow smoke render OK: ${output.length} SVG characters, ${noteGlyphs} path elements; simultaneous multi-part grouping, tight chord intervals, chord anchors, directional continuations, phrase continuity, clef grouping 2→1 and MXL extraction verified.`,
 );
